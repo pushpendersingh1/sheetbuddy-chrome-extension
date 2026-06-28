@@ -238,6 +238,21 @@ describe('POST /transcribe-token', () => {
     expect(await res.json()).toEqual({ token: 'aai-tok-123' });
   });
 
+  it('calls AssemblyAI v3 streaming endpoint via GET', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+    mockFetch.mockImplementationOnce(async (url: string, init: RequestInit) => {
+      capturedUrl = url;
+      capturedMethod = init?.method ?? 'GET';
+      return new Response(JSON.stringify({ token: 'tok' }), { status: 200 });
+    });
+
+    await worker.fetch(makeRequest('/transcribe-token', {}), mockEnv);
+
+    expect(capturedUrl).toContain('streaming.assemblyai.com/v3/token');
+    expect(capturedMethod).toBe('GET');
+  });
+
   it('propagates upstream error status from AssemblyAI', async () => {
     mockFetch.mockResolvedValueOnce(new Response('unauthorized', { status: 401 }));
     const res = await worker.fetch(makeRequest('/transcribe-token', {}), mockEnv);

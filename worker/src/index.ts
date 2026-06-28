@@ -243,13 +243,13 @@ async function handleTTS(request: Request, env: Env): Promise<Response> {
 // ----- Route: POST /transcribe-token -----
 
 async function handleTranscribeToken(_request: Request, env: Env): Promise<Response> {
-  const aaiRes = await fetch('https://api.assemblyai.com/v2/realtime/token', {
-    method: 'POST',
+  // v3 API: GET with query param, max expires_in_seconds is 600
+  const url = 'https://streaming.assemblyai.com/v3/token?expires_in_seconds=300';
+  const aaiRes = await fetch(url, {
+    method: 'GET',
     headers: {
       'authorization': env.ASSEMBLYAI_API_KEY,
-      'content-type': 'application/json',
     },
-    body: JSON.stringify({ expires_in: 3600 }),
   });
 
   if (!aaiRes.ok) {
