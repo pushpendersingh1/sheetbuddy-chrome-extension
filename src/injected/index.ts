@@ -39,23 +39,13 @@ function simulateMouseClick(el: Element): void {
   }
 }
 
-async function waitForNewTextInput(
-  existingInputs: Set<HTMLInputElement>,
-  timeoutMs: number,
-): Promise<HTMLInputElement | null> {
+async function waitForCondition(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const inputs = Array.from(
-      document.querySelectorAll<HTMLInputElement>('input[type="text"], input:not([type])'),
-    );
-    // Only accept an input that was not visible before Alt+/ was dispatched
-    const newInput = inputs.find(
-      (el) => !existingInputs.has(el) && el.offsetParent !== null,
-    );
-    if (newInput) return newInput;
+    if (predicate()) return true;
     await new Promise((r) => setTimeout(r, 50));
   }
-  return null;
+  return false;
 }
 
 function typeIntoTextTarget(target: HTMLElement, text: string): void {
@@ -67,18 +57,22 @@ function typeIntoTextTarget(target: HTMLElement, text: string): void {
     dispatchKeyEvent(target, 'keydown', key, code);
     dispatchKeyEvent(target, 'keypress', key, code);
     target.dispatchEvent(
-      new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: char }),
+      new InputEvent('beforeinput', { bubbles: true, cancelable: true, composed: true, inputType: 'insertText', data: char }),
     );
-    document.execCommand('insertText', false, char);
+    // <input>/<textarea>: setRangeText updates .value; contenteditable: execCommand
+    if ((target as HTMLElement).matches('input, textarea')) {
+      const inp = target as HTMLInputElement;
+      const start = inp.selectionStart ?? inp.value.length;
+      const end = inp.selectionEnd ?? inp.value.length;
+      inp.setRangeText(char, start, end, 'end');
+    } else {
+      document.execCommand('insertText', false, char);
+    }
     target.dispatchEvent(
-      new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: char }),
+      new InputEvent('input', { bubbles: true, cancelable: true, composed: true, inputType: 'insertText', data: char }),
     );
     dispatchKeyEvent(target, 'keyup', key, code);
   }
-}
-
-function pressEnterOnTarget(target: HTMLElement): void {
-  dispatchKey(target, 'Enter', 'Enter');
 }
 
 // ─── MAIN-world menu primitives ──────────────────────────────────────────────
@@ -121,37 +115,57 @@ function openMenu(name: string): void {
 
 function clickMenuItem(text: string): void {
   const items = Array.from(document.querySelectorAll('.goog-menuitem'));
+  // Only consider visible items — many same-text items exist in hidden toolbar menus
   const target = items.find((el) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.height === 0) return false;
     const label = el.querySelector('.goog-menuitem-label') ?? el;
     return label.textContent?.trim() === text;
   });
   if (!target) throw new Error(`Menu item "${text}" not found`);
-  // Closure Library menu items respond to .click() on the inner content div,
-  // not to synthetic mouseover/mousedown/mouseup/click sequences on the outer element.
-  const content = target.querySelector('.goog-menuitem-content') ?? target;
-  (content as HTMLElement).click();
+  // Closure Library requires PointerEvents + MouseEvents with real coordinates
+  const rect = target.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const m: MouseEventInit = { bubbles: true, cancelable: true, composed: true, view: window, button: 0, buttons: 1, clientX: cx, clientY: cy };
+  const p: PointerEventInit = { ...m, pointerType: 'mouse', isPrimary: true, pointerId: 1 };
+  target.dispatchEvent(new PointerEvent('pointerover', p));
+  target.dispatchEvent(new MouseEvent('mouseover', m));
+  target.dispatchEvent(new PointerEvent('pointerdown', p));
+  target.dispatchEvent(new MouseEvent('mousedown', m));
+  target.dispatchEvent(new PointerEvent('pointerup', { ...p, buttons: 0 }));
+  target.dispatchEvent(new MouseEvent('mouseup', { ...m, buttons: 0 }));
+  target.dispatchEvent(new MouseEvent('click', m));
 }
 
 async function executeMenuItem(text: string): Promise<void> {
-  const keyTarget = safeKeyTarget();
+  // .docs-omnibox-input is always in the DOM as a small icon; clicking it expands it.
+  // Alt+/ keyboard dispatch does not expand it from an extension content script.
+  const omnibox = document.querySelector<HTMLInputElement>('.docs-omnibox-input');
+  if (!omnibox) throw new Error('.docs-omnibox-input not found — ensure the page is a Google Sheet');
 
-  // Snapshot all currently-visible text inputs BEFORE triggering Alt+/,
-  // so waitForNewTextInput can detect the search popup as a genuinely new element.
-  const existingInputs = new Set(
-    Array.from(document.querySelectorAll<HTMLInputElement>('input[type="text"], input:not([type])'))
-      .filter((el) => el.offsetParent !== null),
-  );
+  const rect = omnibox.getBoundingClientRect();
+  const cx = rect.left + Math.min(10, rect.width / 2);
+  const cy = rect.top + Math.min(10, rect.height / 2);
+  omnibox.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy }));
+  omnibox.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy }));
+  omnibox.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy }));
+  omnibox.focus();
 
-  // Alt+/ opens the "Search menu items" bar in Google Sheets
-  dispatchKeyEvent(keyTarget, 'keydown', '/', 'Slash', { altKey: true });
-  dispatchKeyEvent(keyTarget, 'keypress', '/', 'Slash', { altKey: true });
-  dispatchKeyEvent(keyTarget, 'keyup', '/', 'Slash', { altKey: true });
+  // Wait for the omnibox to expand (from ~44px to ~350px)
+  const expanded = await waitForCondition(() => omnibox.getBoundingClientRect().width >= 150, 2000);
+  if (!expanded) throw new Error('Omnibox did not expand — ensure a cell is selected and not in edit mode');
 
-  const searchInput = await waitForNewTextInput(existingInputs, 2000);
-  if (!searchInput) throw new Error('Alt+/ search box did not appear within 2s');
+  // Clear any existing value, then type the search text
+  omnibox.value = '';
+  omnibox.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, composed: true, inputType: 'deleteContentBackward', data: null }));
+  typeIntoTextTarget(omnibox, text);
 
-  typeIntoTextTarget(searchInput, text);
-  pressEnterOnTarget(searchInput);
+  await new Promise((r) => setTimeout(r, 400));
+
+  omnibox.dispatchEvent(new KeyboardEvent('keydown',  { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+  omnibox.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+  omnibox.dispatchEvent(new KeyboardEvent('keyup',    { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
 }
 
 // ─── Public surface ──────────────────────────────────────────────────────────
