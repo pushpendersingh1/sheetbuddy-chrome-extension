@@ -9,7 +9,8 @@ export type MessageType =
   | 'NARRATION_DONE'
   | 'STOP_NARRATION'
   | 'TRANSCRIPT_PARTIAL'
-  | 'TRANSCRIPT_FINAL';
+  | 'TRANSCRIPT_FINAL'
+  | 'RUN_PRIMITIVE';
 
 export interface UserQueryPayload {
   text: string;
@@ -24,6 +25,17 @@ export interface PauseAtStepPayload {
 export interface TranscriptPayload {
   text: string;
   isFinal: boolean;
+}
+
+export interface RunPrimitivePayload {
+  name: string;
+  args?: unknown[];
+}
+
+export interface PrimitiveResult {
+  ok: boolean;
+  result?: unknown;
+  error?: string;
 }
 
 export interface Message<T = unknown> {

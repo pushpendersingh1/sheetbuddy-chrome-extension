@@ -22,6 +22,12 @@
       "matches": ["https://docs.google.com/spreadsheets/*"],
       "js": ["content.js"],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["https://docs.google.com/spreadsheets/*"],
+      "js": ["injected.js"],
+      "run_at": "document_end",
+      "world": "MAIN"
     }
   ],
   "action": {
