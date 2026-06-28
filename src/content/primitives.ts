@@ -117,12 +117,13 @@ export function readActiveCell(): string {
 }
 
 export function readCellError(): string {
-  // Error tooltip in Google Sheets — only visible when getBoundingClientRect().height > 0
-  const el = document.querySelector('.docs-bubble-error-content, .docs-error-tooltip');
+  // .annotation-attribution-error stays in DOM after navigation — check height before reading
+  const el = document.querySelector<HTMLElement>('.annotation-attribution-error');
   if (!el) return '';
   const rect = el.getBoundingClientRect();
   if (rect.height === 0) return '';
-  return el.textContent?.trim() ?? '';
+  const span = el.querySelector('span');
+  return span?.textContent?.trim() ?? el.textContent?.trim() ?? '';
 }
 
 export function listSheets(): string[] {
