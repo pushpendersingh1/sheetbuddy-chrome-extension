@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "SheetBuddy",
+  "version": "0.0.1",
+  "description": "AI companion for Google Sheets — voice, vision, and direct sheet interaction",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "offscreen",
+    "scripting",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://docs.google.com/spreadsheets/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://docs.google.com/spreadsheets/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "devpanel.html",
+    "default_title": "SheetBuddy Dev Panel"
+  },
+  "commands": {
+    "push-to-talk": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Period",
+        "mac": "Command+Shift+Period"
+      },
+      "description": "Open SheetBuddy in voice mode"
+    },
+    "open-text-input": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Comma",
+        "mac": "Command+Shift+Comma"
+      },
+      "description": "Open SheetBuddy text input"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
