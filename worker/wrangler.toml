@@ -1,0 +1,11 @@
+name = "sheetbuddy-worker"
+main = "src/index.ts"
+compatibility_date = "2026-06-28"
+
+# Secrets (never commit values — set via CLI):
+#   wrangler secret put ANTHROPIC_API_KEY
+#   wrangler secret put ELEVENLABS_API_KEY
+#   wrangler secret put ASSEMBLYAI_API_KEY
+#
+# Optional variable (defaults to George voice if not set):
+#   wrangler secret put ELEVENLABS_VOICE_ID
