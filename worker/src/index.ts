@@ -1,3 +1,5 @@
+import { buildUserMessage, type DOMContext } from './utils';
+
 export interface Env {
   ANTHROPIC_API_KEY: string;
   ELEVENLABS_API_KEY: string;
@@ -32,16 +34,6 @@ function errorResponse(message: string, status = 500): Response {
 }
 
 // ----- Types -----
-
-interface DOMContext {
-  activeCell: string;
-  formulaBar: string;
-  spreadsheetId: string;
-  sheetGid: string;
-  sheetName: string;
-  columnHeaders: string[];
-  availableSheets: string[];
-}
 
 interface ChatRequestBody {
   text: string;
@@ -195,19 +187,6 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
   }
 
   return withCors(Response.json(plan));
-}
-
-function buildUserMessage(question: string, ctx: DOMContext): string {
-  return `## Spreadsheet context
-- Active cell: ${ctx.activeCell}
-- Formula bar: ${ctx.formulaBar || '(empty)'}
-- Sheet: ${ctx.sheetName} (gid: ${ctx.sheetGid})
-- Spreadsheet ID: ${ctx.spreadsheetId}
-- Column headers: ${ctx.columnHeaders.length ? ctx.columnHeaders.join(', ') : '(none detected)'}
-- Available sheets: ${ctx.availableSheets.join(', ')}
-
-## User request
-${question}`;
 }
 
 // ----- Route: POST /tts -----
