@@ -114,8 +114,8 @@ describe('readActiveCell', () => {
     document.body.innerHTML = '';
   });
 
-  it('returns the name box text content', () => {
-    document.body.innerHTML = `<div class="docs-name-box">B7</div>`;
+  it('returns the name box input value', () => {
+    document.body.innerHTML = `<input id="t-name-box" class="waffle-name-box" value="B7" />`;
     expect(readActiveCell()).toBe('B7');
   });
 
@@ -131,11 +131,21 @@ describe('listSheets', () => {
     document.body.innerHTML = '';
   });
 
-  it('returns all sheet tab names in order', () => {
+  it('returns visible label names, ignoring hidden SVG comment-count text', () => {
+    // Mirrors real Sheets DOM: hidden "0" node + visible .docs-sheet-tab-name span
     document.body.innerHTML = `
-      <div class="docs-sheet-tab">Sheet1</div>
-      <div class="docs-sheet-tab">Sheet2</div>
-      <div class="docs-sheet-tab">Data</div>
+      <div class="docs-sheet-tab">
+        <span style="display:none">0</span>
+        <span class="docs-sheet-tab-name">Sheet1</span>
+      </div>
+      <div class="docs-sheet-tab">
+        <span style="display:none">0</span>
+        <span class="docs-sheet-tab-name">Sheet2</span>
+      </div>
+      <div class="docs-sheet-tab">
+        <span style="display:none">0</span>
+        <span class="docs-sheet-tab-name">Data</span>
+      </div>
     `;
     expect(listSheets()).toEqual(['Sheet1', 'Sheet2', 'Data']);
   });
@@ -152,16 +162,24 @@ describe('activeSheetName', () => {
     document.body.innerHTML = '';
   });
 
-  it('returns name of the tab with the active class', () => {
+  it('returns name of the active tab via .docs-sheet-tab-name span', () => {
     document.body.innerHTML = `
-      <div class="docs-sheet-tab">Sheet1</div>
-      <div class="docs-sheet-tab docs-sheet-active-tab">Sheet2</div>
+      <div class="docs-sheet-tab">
+        <span class="docs-sheet-tab-name">Sheet1</span>
+      </div>
+      <div class="docs-sheet-tab docs-sheet-active-tab">
+        <span class="docs-sheet-tab-name">Sheet2</span>
+      </div>
     `;
     expect(activeSheetName()).toBe('Sheet2');
   });
 
   it('returns empty string when no tab has the active class', () => {
-    document.body.innerHTML = `<div class="docs-sheet-tab">Sheet1</div>`;
+    document.body.innerHTML = `
+      <div class="docs-sheet-tab">
+        <span class="docs-sheet-tab-name">Sheet1</span>
+      </div>
+    `;
     expect(activeSheetName()).toBe('');
   });
 });

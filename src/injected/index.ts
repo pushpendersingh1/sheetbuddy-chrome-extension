@@ -40,7 +40,7 @@ function simulateMouseClick(el: Element): void {
 }
 
 async function waitForNewTextInput(
-  previousActive: Element | null,
+  existingInputs: Set<HTMLInputElement>,
   timeoutMs: number,
 ): Promise<HTMLInputElement | null> {
   const deadline = Date.now() + timeoutMs;
@@ -48,8 +48,9 @@ async function waitForNewTextInput(
     const inputs = Array.from(
       document.querySelectorAll<HTMLInputElement>('input[type="text"], input:not([type])'),
     );
+    // Only accept an input that was not visible before Alt+/ was dispatched
     const newInput = inputs.find(
-      (el) => el !== previousActive && el.offsetParent !== null,
+      (el) => !existingInputs.has(el) && el.offsetParent !== null,
     );
     if (newInput) return newInput;
     await new Promise((r) => setTimeout(r, 50));
@@ -125,19 +126,28 @@ function clickMenuItem(text: string): void {
     return label.textContent?.trim() === text;
   });
   if (!target) throw new Error(`Menu item "${text}" not found`);
-  simulateMouseClick(target);
+  // Closure Library menu items respond to .click() on the inner content div,
+  // not to synthetic mouseover/mousedown/mouseup/click sequences on the outer element.
+  const content = target.querySelector('.goog-menuitem-content') ?? target;
+  (content as HTMLElement).click();
 }
 
 async function executeMenuItem(text: string): Promise<void> {
-  const previousActive = document.activeElement;
   const keyTarget = safeKeyTarget();
+
+  // Snapshot all currently-visible text inputs BEFORE triggering Alt+/,
+  // so waitForNewTextInput can detect the search popup as a genuinely new element.
+  const existingInputs = new Set(
+    Array.from(document.querySelectorAll<HTMLInputElement>('input[type="text"], input:not([type])'))
+      .filter((el) => el.offsetParent !== null),
+  );
 
   // Alt+/ opens the "Search menu items" bar in Google Sheets
   dispatchKeyEvent(keyTarget, 'keydown', '/', 'Slash', { altKey: true });
   dispatchKeyEvent(keyTarget, 'keypress', '/', 'Slash', { altKey: true });
   dispatchKeyEvent(keyTarget, 'keyup', '/', 'Slash', { altKey: true });
 
-  const searchInput = await waitForNewTextInput(previousActive, 2000);
+  const searchInput = await waitForNewTextInput(existingInputs, 2000);
   if (!searchInput) throw new Error('Alt+/ search box did not appear within 2s');
 
   typeIntoTextTarget(searchInput, text);

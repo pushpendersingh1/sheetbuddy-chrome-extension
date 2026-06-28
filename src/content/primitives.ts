@@ -111,8 +111,9 @@ export function readFormulaBar(): string {
 }
 
 export function readActiveCell(): string {
-  const el = document.querySelector('.docs-name-box');
-  return el?.textContent?.trim() ?? '';
+  // Name Box is an <input id="t-name-box"> — read .value, not textContent
+  const el = document.querySelector<HTMLInputElement>('#t-name-box');
+  return el?.value?.trim() ?? '';
 }
 
 export function readCellError(): string {
@@ -125,70 +126,53 @@ export function readCellError(): string {
 }
 
 export function listSheets(): string[] {
-  return Array.from(document.querySelectorAll('.docs-sheet-tab')).map(
+  // .docs-sheet-tab-name is the visible label span inside each tab;
+  // the outer .docs-sheet-tab textContent includes hidden SVG text ("0" comment count)
+  return Array.from(document.querySelectorAll('.docs-sheet-tab .docs-sheet-tab-name')).map(
     (el) => el.textContent?.trim() ?? '',
   );
 }
 
 export function activeSheetName(): string {
-  const el = document.querySelector('.docs-sheet-active-tab');
+  const el = document.querySelector('.docs-sheet-active-tab .docs-sheet-tab-name');
   return el?.textContent?.trim() ?? '';
 }
 
 // ─── Navigation primitives ───────────────────────────────────────────────────
 
-export async function selectCell(ref: string): Promise<void> {
-  const nameBox = document.querySelector('.docs-name-box') as HTMLElement | null;
-  if (!nameBox) throw new Error('Name Box (.docs-name-box) not found');
-
-  simulateMouseClick(nameBox);
-  await new Promise((r) => setTimeout(r, 50));
-
-  // After click, find the active input inside or treat name box itself as target
-  const input = nameBox.querySelector('input') as HTMLInputElement | null;
-  if (input) {
-    input.select();
-    input.value = ref;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  } else {
-    // Keyboard approach: select-all then type
-    dispatchKey(nameBox, 'a', 'KeyA', { ctrlKey: true, metaKey: detectOS() === 'mac' });
-    for (const char of ref) {
-      const { key, code } = getKeyInfo(char);
-      dispatchKeyEvent(nameBox, 'keydown', key, code);
-      dispatchKeyEvent(nameBox, 'keypress', key, code);
-      nameBox.dispatchEvent(
-        new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: char }),
-      );
-      document.execCommand('insertText', false, char);
-      nameBox.dispatchEvent(
-        new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: char }),
-      );
-      dispatchKeyEvent(nameBox, 'keyup', key, code);
-    }
-  }
-
-  dispatchKey(safeKeyTarget(), 'Enter', 'Enter');
+export function selectCell(ref: string): void {
+  // URL hash navigation: changes only the hash — no full page reload.
+  // Verified: window.location.hash change triggers Sheets to select the given range.
+  const url = new URL(window.location.href);
+  const gid =
+    url.searchParams.get('gid') ??
+    new URLSearchParams(window.location.hash.slice(1)).get('gid') ??
+    '0';
+  window.location.hash = `gid=${gid}&range=${ref}`;
 }
 
 export async function selectRange(start: string, end: string): Promise<void> {
-  await selectCell(`${start}:${end}`);
+  selectCell(`${start}:${end}`);
 }
 
 export function navigateToSheet(name: string): void {
-  const tabs = Array.from(document.querySelectorAll('.docs-sheet-tab'));
-  const target = tabs.find((t) => t.textContent?.trim() === name);
-  if (!target) throw new Error(`Sheet tab "${name}" not found`);
-  simulateMouseClick(target);
+  // Match by the visible label span, then click the parent tab element
+  const labelEls = Array.from(document.querySelectorAll('.docs-sheet-tab .docs-sheet-tab-name'));
+  const labelEl = labelEls.find((el) => el.textContent?.trim() === name);
+  if (!labelEl) throw new Error(`Sheet tab "${name}" not found`);
+  const tabEl = labelEl.closest('.docs-sheet-tab') as Element;
+  simulateMouseClick(tabEl);
 }
 
 // ─── Edit primitives ─────────────────────────────────────────────────────────
 
 export function enterEditMode(): void {
+  // F2 enters edit mode on the selected cell. Enter moves the cursor down — not edit mode.
   const editor =
     document.getElementById('waffle-rich-text-editor') ?? (safeKeyTarget() as HTMLElement);
-  editor.focus?.();
-  dispatchKey(editor, 'Enter', 'Enter');
+  (editor as HTMLElement).focus?.();
+  dispatchKeyEvent(editor, 'keydown', 'F2', 'F2', { keyCode: 113 });
+  dispatchKeyEvent(editor, 'keyup', 'F2', 'F2', { keyCode: 113 });
 }
 
 export function typeText(text: string): void {
