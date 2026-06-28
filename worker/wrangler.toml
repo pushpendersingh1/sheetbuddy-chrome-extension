@@ -1,6 +1,6 @@
 name = "sheetbuddy-worker"
 main = "src/index.ts"
-compatibility_date = "2026-06-28"
+compatibility_date = "2026-05-03"
 
 # Secrets (never commit values — set via CLI):
 #   wrangler secret put ANTHROPIC_API_KEY
