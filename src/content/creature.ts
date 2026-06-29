@@ -3,8 +3,8 @@ type CreatureState = 'idle' | 'active' | 'paused';
 const STYLES = `
   :host {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
+    bottom: 66px;
+    right: 72px;
     width: 56px;
     height: 56px;
     z-index: 2147483647;

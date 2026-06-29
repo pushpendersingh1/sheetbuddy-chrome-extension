@@ -79,6 +79,15 @@ async function runMainPrimitive(name: string, args: unknown[] = []): Promise<Pri
   }
 }
 
+// ─── Send a fire-and-forget message to the active Sheets tab ─────────────────
+
+async function sendCreatureMessage(msgType: string): Promise<void> {
+  const tab = await getSheetsTab();
+  await activateSheetsTab(tab);
+  chrome.tabs.sendMessage(tab.id!, { type: msgType });
+  log('info', `→ ${msgType}`);
+}
+
 // ─── Button wiring ────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -89,6 +98,22 @@ document.addEventListener('DOMContentLoaded', () => {
       Array.from(output.querySelectorAll('.log')).forEach((el) => el.remove());
     };
   }
+
+  document.querySelectorAll<HTMLButtonElement>('button[data-msg]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const msgType = btn.dataset.msg!;
+      btn.disabled = true;
+      try {
+        await sendCreatureMessage(msgType);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log('err', `${msgType}: ${msg}`);
+        showBanner(msg);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
 
   document.querySelectorAll<HTMLButtonElement>('button[data-fn]').forEach((btn) => {
     btn.addEventListener('click', async () => {

@@ -20,12 +20,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://docs.google.com/spreadsheets/*"],
+      "matches": ["https://docs.google.com/spreadsheets/d/*"],
       "js": ["content.js"],
       "run_at": "document_end"
     },
     {
-      "matches": ["https://docs.google.com/spreadsheets/*"],
+      "matches": ["https://docs.google.com/spreadsheets/d/*"],
       "js": ["injected.js"],
       "run_at": "document_end",
       "world": "MAIN"
