@@ -178,7 +178,7 @@ export function enterEditMode(): void {
   dispatchKeyEvent(editor, 'keyup', 'F2', 'F2', { keyCode: 113 });
 }
 
-export function typeText(text: string): void {
+export function typeText(text: string, { overwrite = false }: { overwrite?: boolean } = {}): void {
   const editor = document.getElementById('waffle-rich-text-editor');
   if (!editor) throw new Error('Editor (#waffle-rich-text-editor) not found — call enterEditMode() first');
 
@@ -189,6 +189,23 @@ export function typeText(text: string): void {
       throw new Error('typeText aborted: focus is held by another element — user may have clicked away');
     }
     editor.focus();
+  }
+
+  // F2 switches Sheets into formula-parse mode, which enables range highlighting
+  // while a formula is being typed. Without it, text appears but cell references
+  // are not coloured and range borders are not drawn.
+  dispatchKeyEvent(editor, 'keydown', 'F2', 'F2', { keyCode: 113 });
+  dispatchKeyEvent(editor, 'keyup', 'F2', 'F2', { keyCode: 113 });
+
+  if (overwrite) {
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      sel.deleteFromDocument();
+    }
   }
 
   for (const char of text) {

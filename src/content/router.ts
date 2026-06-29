@@ -32,7 +32,7 @@ const PRIMITIVES: Record<string, PrimitiveFn> = {
   selectRange: (start: unknown, end: unknown) => selectRange(start as string, end as string),
   navigateToSheet: (name: unknown) => navigateToSheet(name as string),
   enterEditMode,
-  typeText: (text: unknown) => typeText(text as string),
+  typeText: (text: unknown, opts?: unknown) => typeText(text as string, opts as { overwrite?: boolean } | undefined),
   writeToSelectedCell: (text: unknown) => writeToSelectedCell(text as string),
   commitCell,
   pressEscape,

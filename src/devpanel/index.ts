@@ -112,6 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (btn.dataset.input) {
         const val = (document.getElementById(btn.dataset.input) as HTMLInputElement).value;
         args = [val];
+        if (btn.dataset.overwrite) args = [...args, { overwrite: true }];
       }
 
       log('info', `${fnName}(${args.map((a) => JSON.stringify(a)).join(', ')})`);
