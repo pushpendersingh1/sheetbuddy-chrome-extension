@@ -22,19 +22,18 @@ function base64ToArrayBuffer(b64: string): ArrayBuffer {
 
 export class TTSNarrator implements Narrator {
   private workerUrl: string;
+  // chrome.storage is not available in offscreen documents — use in-memory cache instead.
+  // Cleared automatically when the offscreen document is destroyed (same lifetime as session storage).
+  private cache = new Map<string, string>();
 
   constructor(workerUrl: string) {
     this.workerUrl = workerUrl;
   }
 
   async speak(text: string): Promise<void> {
-    const cacheKey = `tts:${text}`;
-    const cached = await chrome.storage.session.get(cacheKey);
-    let audioData: string;
+    let audioData = this.cache.get(text);
 
-    if (cached[cacheKey]) {
-      audioData = cached[cacheKey] as string;
-    } else {
+    if (!audioData) {
       const res = await fetch(`${this.workerUrl}/tts`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -43,7 +42,7 @@ export class TTSNarrator implements Narrator {
       if (!res.ok) throw new Error(`TTS request failed: ${res.status}`);
       const buffer = await res.arrayBuffer();
       audioData = arrayBufferToBase64(buffer);
-      await chrome.storage.session.set({ [cacheKey]: audioData });
+      this.cache.set(text, audioData);
     }
 
     const buffer = base64ToArrayBuffer(audioData);

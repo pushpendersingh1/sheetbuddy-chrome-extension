@@ -1,23 +1,6 @@
 import { describe, it, expect, beforeEach, vi, type MockInstance } from 'vitest';
 import { TTSNarrator } from '../src/offscreen/narrator';
 
-// ---- chrome.storage.session stub ----
-
-const sessionStore: Record<string, string> = {};
-
-const chromeMock = {
-  storage: {
-    session: {
-      get: vi.fn(async (key: string) => ({ [key]: sessionStore[key] })),
-      set: vi.fn(async (items: Record<string, string>) => {
-        Object.assign(sessionStore, items);
-      }),
-    },
-  },
-};
-
-Object.defineProperty(globalThis, 'chrome', { value: chromeMock, writable: true });
-
 // ---- Audio stub ----
 
 class AudioStub {
@@ -25,7 +8,6 @@ class AudioStub {
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
   play = vi.fn(() => {
-    // Simulate successful play; onended fires asynchronously
     Promise.resolve().then(() => this.onended?.());
     return Promise.resolve();
   });
@@ -61,7 +43,6 @@ describe('TTSNarrator', () => {
   let fetchMock: MockInstance;
 
   beforeEach(() => {
-    Object.keys(sessionStore).forEach(k => delete sessionStore[k]);
     vi.clearAllMocks();
 
     (URL as unknown as { createObjectURL: MockInstance }).createObjectURL = vi.fn(() => 'blob:fake-url');
@@ -82,12 +63,9 @@ describe('TTSNarrator', () => {
     expect(JSON.parse(opts.body)).toEqual({ text: 'Hello SheetBuddy' });
   });
 
-  it('calls audio.play()', async () => {
-    await narrator.speak('Hello SheetBuddy');
-    const audioInstance = (AudioStub as unknown as { instances: AudioStub[] }).instances?.[0]
-      ?? Object.values(sessionStore); // fallback — just checking play was called
-    // play is a stub on the prototype; verify via the class mock call count
-    expect(AudioStub.prototype.play ?? fetchMock).toBeDefined();
+  it('resolves after audio ends, confirming play() was called', async () => {
+    // speak() only resolves when audio.onended fires, which the stub triggers after play()
+    await expect(narrator.speak('Hello SheetBuddy')).resolves.toBeUndefined();
   });
 
   it('resolves only after audio ends', async () => {
@@ -99,13 +77,11 @@ describe('TTSNarrator', () => {
     expect(order).toEqual(['speaking', 'resolved', 'after']);
   });
 
-  it('stores audio in chrome.storage.session after fetch', async () => {
+  it('stores audio in the in-memory cache after fetch', async () => {
     await narrator.speak('Cache me');
-    expect(chromeMock.storage.session.set).toHaveBeenCalledOnce();
-    const setArg = chromeMock.storage.session.set.mock.calls[0][0] as Record<string, string>;
-    const key = Object.keys(setArg)[0];
-    expect(key).toContain('Cache me');
-    expect(typeof setArg[key]).toBe('string'); // base64
+    // cache is private — verify indirectly: a second call must not fetch
+    await narrator.speak('Cache me');
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('does NOT call fetch on second speak with same text (cache hit)', async () => {
@@ -125,6 +101,9 @@ describe('TTSNarrator', () => {
   it('rejects and does NOT cache when fetch returns non-200', async () => {
     globalThis.fetch = vi.fn(async () => ({ ok: false, status: 429 })) as unknown as typeof fetch;
     await expect(narrator.speak('Error phrase')).rejects.toThrow('TTS request failed: 429');
-    expect(chromeMock.storage.session.set).not.toHaveBeenCalled();
+    // cache miss must not persist — a retry should hit fetch again
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await narrator.speak('Error phrase');
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
