@@ -3,7 +3,7 @@ type CreatureState = 'idle' | 'active' | 'paused';
 const STYLES = `
   :host {
     position: fixed;
-    bottom: 66px;
+    bottom: 56px;
     right: 72px;
     width: 56px;
     height: 56px;
