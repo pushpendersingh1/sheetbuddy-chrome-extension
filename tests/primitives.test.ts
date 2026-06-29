@@ -8,6 +8,8 @@ import {
   listSheets,
   activeSheetName,
   getShortcutDef,
+  typeText,
+  writeToSelectedCell,
 } from '../src/content/primitives';
 
 function setUserAgent(ua: string) {
@@ -181,6 +183,54 @@ describe('activeSheetName', () => {
       </div>
     `;
     expect(activeSheetName()).toBe('');
+  });
+});
+
+// --- typeText focus guard ---
+
+describe('typeText focus guard', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('throws when another element holds focus', () => {
+    const editor = document.createElement('div');
+    editor.id = 'waffle-rich-text-editor';
+    editor.setAttribute('contenteditable', 'true');
+    document.body.appendChild(editor);
+
+    const other = document.createElement('input');
+    document.body.appendChild(other);
+    other.focus();
+
+    expect(() => typeText('hello')).toThrow(/typeText aborted/i);
+  });
+
+  it('throws when editor element is absent', () => {
+    expect(() => typeText('hello')).toThrow(/waffle-rich-text-editor/i);
+  });
+});
+
+// --- writeToSelectedCell ---
+
+describe('writeToSelectedCell', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('throws when formula bar element is absent', async () => {
+    await expect(writeToSelectedCell('=SUM(A1:A10)')).rejects.toThrow(/formula bar/i);
+  });
+
+  it('resolves without throwing when formula bar is present', async () => {
+    document.body.innerHTML = `
+      <div id="t-formula-bar-input">
+        <div class="cell-input">old content</div>
+      </div>
+      <div id="waffle-rich-text-editor" contenteditable="true"></div>
+    `;
+    // jsdom Selection API is limited — we just assert it doesn't throw
+    await expect(writeToSelectedCell('=SUM(A1:A10)')).resolves.toBeUndefined();
   });
 });
 

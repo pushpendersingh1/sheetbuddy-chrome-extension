@@ -34,8 +34,13 @@ function dispatchKey(target: Element, key: string, code: string, init: KeyboardE
 }
 
 function simulateMouseClick(el: Element): void {
+  const rect = el.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
   for (const type of ['mouseover', 'mousedown', 'mouseup', 'click'] as const) {
-    el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    el.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy }),
+    );
   }
 }
 
@@ -120,7 +125,7 @@ function clickMenuItem(text: string): void {
     const rect = el.getBoundingClientRect();
     if (rect.height === 0) return false;
     const label = el.querySelector('.goog-menuitem-label') ?? el;
-    return label.textContent?.trim() === text;
+    return ((label as HTMLElement).innerText ?? '').trim() === text;
   });
   if (!target) throw new Error(`Menu item "${text}" not found`);
   // Closure Library requires PointerEvents + MouseEvents with real coordinates
@@ -136,6 +141,30 @@ function clickMenuItem(text: string): void {
   target.dispatchEvent(new PointerEvent('pointerup', { ...p, buttons: 0 }));
   target.dispatchEvent(new MouseEvent('mouseup', { ...m, buttons: 0 }));
   target.dispatchEvent(new MouseEvent('click', m));
+}
+
+// Navigates a two-level menu: hovers the parent item to open its submenu,
+// waits for it to render, then clicks the child.
+// Use this for nested items like Format → Text → Bold.
+// Prefer executeMenuItem() for anything reachable via the omnibox search.
+async function clickSubMenuItem(parent: string, child: string): Promise<void> {
+  clickMenuItem(parent);
+  // Submenus render lazily after hover — 200 ms matches observed Sheets render time
+  await new Promise<void>((r) => setTimeout(r, 200));
+  clickMenuItem(child);
+}
+
+// Opens a top-level menu then walks the full path in one shot — no focus hand-off between steps.
+// Use this instead of separate openMenu() + clickSubMenuItem() calls from the devpanel.
+// Examples:
+//   navigateMenu("Format", "Bold")          → Format → Bold (direct item)
+//   navigateMenu("Format", "Text", "Bold")  → Format → Text → Bold (submenu)
+async function navigateMenu(menuName: string, ...path: string[]): Promise<void> {
+  openMenu(menuName);
+  for (const item of path) {
+    await new Promise<void>((r) => setTimeout(r, 200));
+    clickMenuItem(item);
+  }
 }
 
 async function executeMenuItem(text: string): Promise<void> {
@@ -168,10 +197,35 @@ async function executeMenuItem(text: string): Promise<void> {
   omnibox.dispatchEvent(new KeyboardEvent('keyup',    { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
 }
 
+// Opens menuName, waits for items to render, captures full DOM info for every
+// visible .goog-menuitem, then closes the menu — all in one executeScript call
+// so focus never leaves Sheets. Returns one JSON string per item.
+async function inspectMenu(menuName: string): Promise<string[]> {
+  openMenu(menuName);
+  await new Promise<void>((r) => setTimeout(r, 300));
+  const results = Array.from(document.querySelectorAll('.goog-menuitem'))
+    .filter((el) => el.getBoundingClientRect().height > 0)
+    .map((el) => {
+      const label = el.querySelector('.goog-menuitem-label') ?? el;
+      return JSON.stringify({
+        innerText:   ((label as HTMLElement).innerText ?? '').trim(),
+        textContent: (label.textContent ?? '').replace(/\s+/g, ' ').trim(),
+        ariaLabel:   el.getAttribute('aria-label') ?? '',
+      });
+    });
+  // Close the menu so the sheet isn't left in an open-menu state
+  const editor = document.getElementById('waffle-rich-text-editor') ?? document.body;
+  editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+  return results;
+}
+
 // ─── Public surface ──────────────────────────────────────────────────────────
 
 (window as Window & { __sheetbuddy?: Record<string, unknown> }).__sheetbuddy = {
   openMenu,
+  inspectMenu,
   clickMenuItem,
+  clickSubMenuItem,
+  navigateMenu,
   executeMenuItem,
 };

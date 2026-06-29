@@ -85,8 +85,9 @@
     <button data-fn="pressEscape">pressEscape()</button>
   </div>
   <div class="input-row">
-    <input type="text" id="type-text" value="=SUM(A1:A10)" placeholder="text to type" />
+    <input type="text" id="type-text" value="=SUM(A1:A10)" placeholder="text to type / write" />
     <button data-fn="typeText" data-input="type-text">typeText()</button>
+    <button data-fn="writeToSelectedCell" data-input="type-text">writeToSelectedCell()</button>
   </div>
 
   <h2>Shortcuts</h2>
@@ -99,10 +100,15 @@
   </div>
 
   <h2>MAIN World <span style="font-weight:400;color:#9ca3af">(dashed border)</span></h2>
-  <div class="row">
-    <button class="main-world" data-fn="openMenu" data-args='["Format"]' data-world="main">openMenu("Format")</button>
-    <button class="main-world" data-fn="clickMenuItem" data-args='["Bold"]' data-world="main">clickMenuItem("Bold")</button>
+  <div class="input-row">
+    <input type="text" id="inspect-menu" value="File" placeholder="menu name" style="max-width:65px" />
+    <button class="main-world" data-fn="inspectMenu" data-input="inspect-menu" data-world="main">inspectMenu()</button>
     <button class="main-world" data-fn="executeMenuItem" data-args='["Bold"]' data-world="main">executeMenuItem("Bold")</button>
+  </div>
+  <div class="input-row">
+    <input type="text" id="nav-menu" value="Format" placeholder="menu" style="max-width:65px" />
+    <input type="text" id="nav-path" value="Text,Bold" placeholder="path (comma-sep)" />
+    <button class="main-world" data-fn="navigateMenu" data-input-menu="nav-menu" data-input-path="nav-path" data-world="main">navigateMenu()</button>
   </div>
 
   <div id="output">

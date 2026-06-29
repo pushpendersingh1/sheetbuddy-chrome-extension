@@ -22,18 +22,24 @@ function showBanner(msg: string): void {
 // ─── Tab helpers ──────────────────────────────────────────────────────────────
 
 async function getSheetsTab(): Promise<chrome.tabs.Tab> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error('No active tab');
-  if (!tab.url?.includes('docs.google.com/spreadsheets')) {
-    throw new Error('Active tab is not a Google Sheet');
+  const tabs = await chrome.tabs.query({ url: 'https://docs.google.com/spreadsheets/*' });
+  if (tabs.length === 0) throw new Error('No Google Sheets tab found — open a sheet first');
+  // Pick the most recently accessed one
+  return tabs.reduce((a, b) => ((b.lastAccessed ?? 0) > (a.lastAccessed ?? 0) ? b : a));
+}
+
+async function activateSheetsTab(tab: chrome.tabs.Tab): Promise<void> {
+  if (tab.windowId !== undefined) {
+    await chrome.windows.update(tab.windowId, { focused: true });
   }
-  return tab;
+  await chrome.tabs.update(tab.id!, { active: true });
 }
 
 // ─── Run an isolated-world primitive via content script ───────────────────────
 
 async function runPrimitive(name: string, args: unknown[] = []): Promise<PrimitiveResult> {
   const tab = await getSheetsTab();
+  await activateSheetsTab(tab);
   return new Promise((resolve) => {
     const payload: RunPrimitivePayload = { name, args };
     chrome.tabs.sendMessage(tab.id!, { type: 'RUN_PRIMITIVE', payload }, (result) => {
@@ -50,6 +56,7 @@ async function runPrimitive(name: string, args: unknown[] = []): Promise<Primiti
 
 async function runMainPrimitive(name: string, args: unknown[] = []): Promise<PrimitiveResult> {
   const tab = await getSheetsTab();
+  await activateSheetsTab(tab);
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id! },
@@ -92,6 +99,12 @@ document.addEventListener('DOMContentLoaded', () => {
       // Resolve args from various data attributes
       if (btn.dataset.args) {
         args = JSON.parse(btn.dataset.args) as unknown[];
+      } else if (btn.dataset.inputMenu && btn.dataset.inputPath) {
+        // navigateMenu: first arg = menu name, rest = path items (comma-separated)
+        const menu = (document.getElementById(btn.dataset.inputMenu) as HTMLInputElement).value;
+        const pathStr = (document.getElementById(btn.dataset.inputPath) as HTMLInputElement).value;
+        const path = pathStr.split(',').map((s) => s.trim()).filter(Boolean);
+        args = [menu, ...path];
       } else if (btn.dataset.inputStart && btn.dataset.inputEnd) {
         const start = (document.getElementById(btn.dataset.inputStart) as HTMLInputElement).value;
         const end = (document.getElementById(btn.dataset.inputEnd) as HTMLInputElement).value;

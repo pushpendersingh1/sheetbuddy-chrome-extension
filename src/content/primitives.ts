@@ -96,8 +96,13 @@ function getKeyInfo(char: string): { key: string; code: string } {
 }
 
 function simulateMouseClick(el: Element): void {
+  const rect = el.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
   for (const type of ['mouseover', 'mousedown', 'mouseup', 'click'] as const) {
-    el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    el.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy }),
+    );
   }
 }
 
@@ -117,11 +122,8 @@ export function readActiveCell(): string {
 }
 
 export function readCellError(): string {
-  // .annotation-attribution-error stays in DOM after navigation — check height before reading
   const el = document.querySelector<HTMLElement>('.annotation-attribution-error');
   if (!el) return '';
-  const rect = el.getBoundingClientRect();
-  if (rect.height === 0) return '';
   const span = el.querySelector('span');
   return span?.textContent?.trim() ?? el.textContent?.trim() ?? '';
 }
@@ -180,7 +182,15 @@ export function typeText(text: string): void {
   const editor = document.getElementById('waffle-rich-text-editor');
   if (!editor) throw new Error('Editor (#waffle-rich-text-editor) not found — call enterEditMode() first');
 
-  editor.focus();
+  // Focus guard: if something else has focus (user clicked away), abort rather than corrupt their work.
+  const active = document.activeElement;
+  if (active !== editor) {
+    if (active && active !== document.body && active.nodeType === Node.ELEMENT_NODE) {
+      throw new Error('typeText aborted: focus is held by another element — user may have clicked away');
+    }
+    editor.focus();
+  }
+
   for (const char of text) {
     const { key, code } = getKeyInfo(char);
     dispatchKeyEvent(editor, 'keydown', key, code);
@@ -209,11 +219,50 @@ export function typeText(text: string): void {
 }
 
 export function commitCell(): void {
-  dispatchKey(safeKeyTarget(), 'Enter', 'Enter');
+  const editor = document.getElementById('waffle-rich-text-editor') as HTMLElement | null;
+  const target = editor ?? safeKeyTarget();
+  (target as HTMLElement).focus?.();
+  dispatchKey(target, 'Enter', 'Enter', { keyCode: 13, which: 13 });
+}
+
+// Replaces the entire cell content via the formula bar — no streaming, no append.
+// Use this for formula writes (e.g. "=SUM(A1:A10)"). Use typeText() for char-by-char streaming.
+export async function writeToSelectedCell(text: string): Promise<void> {
+  const formulaBar = document.querySelector<HTMLElement>(
+    '#t-formula-bar-input > div.cell-input',
+  );
+  if (!formulaBar) throw new Error('Formula bar cell-input not found');
+
+  formulaBar.focus();
+  await new Promise<void>((r) => setTimeout(r, 1));
+
+  // Clear all existing content using Selection API (matches Shortiecuts approach)
+  const sel = window.getSelection();
+  if (sel) {
+    const range = document.createRange();
+    range.selectNodeContents(formulaBar);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    sel.deleteFromDocument();
+    // After deletion, selection is collapsed inside the now-empty formulaBar
+    const sel2 = window.getSelection();
+    if (sel2 && sel2.rangeCount > 0) {
+      sel2.getRangeAt(0).insertNode(document.createTextNode(text));
+      sel2.collapseToEnd();
+    }
+  }
+
+  await new Promise<void>((r) => setTimeout(r, 1));
+
+  // Commit — keyCode required by Sheets (same as commitCell fix)
+  dispatchKey(formulaBar, 'Enter', 'Enter', { keyCode: 13, which: 13 });
 }
 
 export function pressEscape(): void {
-  dispatchKey(safeKeyTarget(), 'Escape', 'Escape');
+  const editor = document.getElementById('waffle-rich-text-editor') as HTMLElement | null;
+  const target = editor ?? safeKeyTarget();
+  (target as HTMLElement).focus?.();
+  dispatchKey(target, 'Escape', 'Escape', { keyCode: 27, which: 27 });
 }
 
 // ─── Shortcut primitives ─────────────────────────────────────────────────────

@@ -6,6 +6,7 @@
   "permissions": [
     "activeTab",
     "tabs",
+    "windows",
     "storage",
     "offscreen",
     "scripting",
@@ -31,7 +32,6 @@
     }
   ],
   "action": {
-    "default_popup": "devpanel.html",
     "default_title": "SheetBuddy Dev Panel"
   },
   "commands": {
