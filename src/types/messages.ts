@@ -10,7 +10,10 @@ export type MessageType =
   | 'STOP_NARRATION'
   | 'TRANSCRIPT_PARTIAL'
   | 'TRANSCRIPT_FINAL'
-  | 'RUN_PRIMITIVE';
+  | 'RUN_PRIMITIVE'
+  | 'SPEAK'
+  | 'START_RECORDING'
+  | 'STOP_RECORDING';
 
 export interface UserQueryPayload {
   text: string;
@@ -25,6 +28,10 @@ export interface PauseAtStepPayload {
 export interface TranscriptPayload {
   text: string;
   isFinal: boolean;
+}
+
+export interface SpeakPayload {
+  text: string;
 }
 
 export interface RunPrimitivePayload {
