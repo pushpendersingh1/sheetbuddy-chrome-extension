@@ -3,29 +3,119 @@
 <head>
   <meta charset="utf-8" />
   <style>
+    * { box-sizing: border-box; }
     body {
-      width: 320px;
-      padding: 16px;
+      width: 400px;
+      padding: 12px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 13px;
+      font-size: 12px;
       color: #111;
       background: #fff;
     }
-    h1 {
-      font-size: 15px;
-      font-weight: 600;
-      color: #10B981;
-      margin: 0 0 8px;
+    h1 { font-size: 14px; font-weight: 600; color: #10B981; margin: 0 0 10px; }
+    h2 { font-size: 10px; font-weight: 600; color: #888; text-transform: uppercase;
+         letter-spacing: 0.05em; margin: 10px 0 4px; }
+    .row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
+    button {
+      font-size: 11px; padding: 3px 8px;
+      border: 1px solid #d1d5db; border-radius: 4px;
+      background: #f9fafb; cursor: pointer; white-space: nowrap;
     }
-    #status {
-      color: #666;
-      font-size: 12px;
+    button:hover { background: #ecfdf5; border-color: #10B981; }
+    button.main-world { border-style: dashed; }
+    .input-row { display: flex; gap: 4px; margin-bottom: 4px; align-items: center; }
+    input[type="text"] {
+      flex: 1; font-size: 11px; padding: 3px 7px;
+      border: 1px solid #d1d5db; border-radius: 4px;
     }
+    #error-banner {
+      display: none; background: #fef2f2; border: 1px solid #fca5a5;
+      border-radius: 4px; padding: 6px 8px; color: #b91c1c; font-size: 11px; margin-bottom: 8px;
+    }
+    #output {
+      margin-top: 10px; border-top: 1px solid #e5e7eb; padding-top: 8px;
+      max-height: 220px; overflow-y: auto;
+    }
+    .log {
+      font-family: 'SF Mono', 'Fira Mono', monospace; font-size: 10.5px;
+      margin: 2px 0; padding: 2px 4px; border-radius: 3px;
+      word-break: break-all;
+    }
+    .log.ok  { color: #065f46; background: #ecfdf5; }
+    .log.err { color: #991b1b; background: #fef2f2; }
+    .log.info { color: #1e40af; background: #eff6ff; }
+    #clear-btn { float: right; font-size: 10px; color: #6b7280; cursor: pointer;
+                 background: none; border: none; padding: 0; margin-top: 2px; }
   </style>
 </head>
 <body>
   <h1>SheetBuddy Dev Panel</h1>
-  <p id="status">Loading…</p>
+  <div id="error-banner"></div>
+
+  <h2>Read</h2>
+  <div class="row">
+    <button data-fn="readFormulaBar">readFormulaBar()</button>
+    <button data-fn="readActiveCell">readActiveCell()</button>
+    <button data-fn="readCellError">readCellError()</button>
+    <button data-fn="readSpreadsheetId">readSpreadsheetId()</button>
+    <button data-fn="listSheets">listSheets()</button>
+    <button data-fn="activeSheetName">activeSheetName()</button>
+    <button data-fn="detectOS">detectOS()</button>
+  </div>
+
+  <h2>Navigation</h2>
+  <div class="input-row">
+    <input type="text" id="cell-ref" value="B7" placeholder="cell ref (e.g. B7)" />
+    <button data-fn="selectCell" data-input="cell-ref">selectCell()</button>
+  </div>
+  <div class="input-row">
+    <input type="text" id="range-start" value="A1" style="max-width:70px" placeholder="start" />
+    <input type="text" id="range-end" value="C3" style="max-width:70px" placeholder="end" />
+    <button data-fn="selectRange" data-input-start="range-start" data-input-end="range-end">selectRange()</button>
+  </div>
+  <div class="input-row">
+    <input type="text" id="sheet-name" value="" placeholder="sheet name" />
+    <button data-fn="navigateToSheet" data-input="sheet-name">navigateToSheet()</button>
+  </div>
+
+  <h2>Edit</h2>
+  <div class="row">
+    <button data-fn="enterEditMode">enterEditMode()</button>
+    <button data-fn="commitCell">commitCell()</button>
+    <button data-fn="pressEscape">pressEscape()</button>
+  </div>
+  <div class="input-row">
+    <input type="text" id="type-text" value="=SUM(A1:A10)" placeholder="text to type / write" />
+    <button data-fn="typeText" data-input="type-text">typeText()</button>
+    <button data-fn="typeText" data-input="type-text" data-overwrite="true">typeText(overwrite)</button>
+    <button data-fn="writeToSelectedCell" data-input="type-text">writeToSelectedCell()</button>
+  </div>
+
+  <h2>Shortcuts</h2>
+  <div class="row">
+    <button data-fn="dispatchShortcut" data-args='["bold"]'>bold</button>
+    <button data-fn="dispatchShortcut" data-args='["italic"]'>italic</button>
+    <button data-fn="dispatchShortcut" data-args='["underline"]'>underline</button>
+    <button data-fn="dispatchShortcut" data-args='["undo"]'>undo</button>
+    <button data-fn="dispatchShortcut" data-args='["redo"]'>redo</button>
+  </div>
+
+  <h2>MAIN World <span style="font-weight:400;color:#9ca3af">(dashed border)</span></h2>
+  <div class="input-row">
+    <input type="text" id="inspect-menu" value="File" placeholder="menu name" style="max-width:65px" />
+    <button class="main-world" data-fn="inspectMenu" data-input="inspect-menu" data-world="main">inspectMenu()</button>
+    <button class="main-world" data-fn="executeMenuItem" data-args='["Bold"]' data-world="main">executeMenuItem("Bold")</button>
+  </div>
+  <div class="input-row">
+    <input type="text" id="nav-menu" value="Format" placeholder="menu" style="max-width:65px" />
+    <input type="text" id="nav-path" value="Text,Bold" placeholder="path (comma-sep)" />
+    <button class="main-world" data-fn="navigateMenu" data-input-menu="nav-menu" data-input-path="nav-path" data-world="main">navigateMenu()</button>
+  </div>
+
+  <div id="output">
+    <button id="clear-btn" onclick="document.getElementById('output').innerHTML = '<button id=\'clear-btn\' onclick=\'document.getElementById(\'output\').innerHTML=\'\';\'>clear</button>'; ">clear</button>
+  </div>
+
   <script src="devpanel.js"></script>
 </body>
 </html>
