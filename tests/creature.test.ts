@@ -1,6 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SheetBuddyCreature } from '../src/content/creature';
 
+// jsdom does not implement ResizeObserver — stub it so mount() doesn't throw.
+// We test that the observer is set up (creature doesn't crash) implicitly via
+// the mount() tests; the reposition math is a browser-layout concern.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserverStub, writable: true });
+
 describe('SheetBuddyCreature', () => {
   let creature: SheetBuddyCreature;
 
