@@ -107,6 +107,25 @@
     <button data-msg="PAUSE_REQUESTED">PAUSE_REQUESTED</button>
   </div>
 
+  <h2>Audio Pipeline</h2>
+  <div class="row" style="align-items:center; gap:8px;">
+    <button id="btn-record-start">🎙 Start Recording</button>
+    <button id="btn-record-stop" disabled>⏹ Stop Recording</button>
+    <span id="mic-status" style="font-size:11px; color:#6b7280;">● idle</span>
+  </div>
+  <div class="input-row" style="margin-top:6px;">
+    <input type="text" id="tts-text" value="Hello from SheetBuddy" placeholder="text to speak" />
+    <button id="btn-speak">▶ Speak</button>
+  </div>
+  <div id="transcript-box" style="
+    margin-top:6px; padding:6px 8px; min-height:40px; max-height:120px;
+    overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;
+    font-family:'SF Mono','Fira Mono',monospace; font-size:10.5px;
+    color:#1e40af; background:#eff6ff; line-height:1.5;
+  ">
+    <span style="color:#9ca3af">Transcripts will appear here...</span>
+  </div>
+
   <h2>MAIN World <span style="font-weight:400;color:#9ca3af">(dashed border)</span></h2>
   <div class="input-row">
     <input type="text" id="inspect-menu" value="File" placeholder="menu name" style="max-width:65px" />
