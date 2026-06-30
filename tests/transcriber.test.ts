@@ -116,6 +116,7 @@ describe('Transcriber', () => {
     expect(ws.url).toContain(`token=${TOKEN}`);
     expect(ws.url).toContain('sample_rate=16000');
     expect(ws.url).toContain('encoding=pcm_s16le');
+    expect(ws.url).toContain('speech_model=universal-streaming-english');
   });
 
   it('calls getUserMedia for audio', () => {
@@ -132,6 +133,24 @@ describe('Transcriber', () => {
     const ws = WebSocketStub.lastInstance;
     ws.simulateMessage({ message_type: 'FinalTranscript', text: 'hello world' });
     expect(onTranscript).toHaveBeenCalledWith('hello world', true);
+  });
+
+  it('fires onTranscript with isFinal=false on v3 Turn with end_of_turn=false', () => {
+    const ws = WebSocketStub.lastInstance;
+    ws.simulateMessage({ type: 'Turn', transcript: 'hello', end_of_turn: false });
+    expect(onTranscript).toHaveBeenCalledWith('hello', false);
+  });
+
+  it('fires onTranscript with isFinal=true on v3 Turn with end_of_turn=true', () => {
+    const ws = WebSocketStub.lastInstance;
+    ws.simulateMessage({ type: 'Turn', transcript: 'hello world', end_of_turn: true });
+    expect(onTranscript).toHaveBeenCalledWith('hello world', true);
+  });
+
+  it('does not fire onTranscript on v3 Turn with empty transcript', () => {
+    const ws = WebSocketStub.lastInstance;
+    ws.simulateMessage({ type: 'Turn', transcript: '', end_of_turn: false });
+    expect(onTranscript).not.toHaveBeenCalled();
   });
 
   it('ignores unknown message types without calling onTranscript', () => {
