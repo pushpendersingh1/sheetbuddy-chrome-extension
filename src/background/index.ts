@@ -52,7 +52,7 @@ chrome.runtime.onMessage.addListener(
       case 'STOP_NARRATION':
       case 'STOP_RECORDING': {
         ensureOffscreen()
-          .then(() => chrome.runtime.sendMessage(message))
+          .then(() => chrome.runtime.sendMessage({ ...message, _relayed: true }))
           .then(relaySendResponse(sendResponse))
           .catch(err => sendResponse({ ok: false, error: String(err) }));
         return true;
@@ -61,7 +61,7 @@ chrome.runtime.onMessage.addListener(
       case 'START_RECORDING': {
         if (tabId !== null) activeTabId = tabId;
         ensureOffscreen()
-          .then(() => chrome.runtime.sendMessage(message))
+          .then(() => chrome.runtime.sendMessage({ ...message, _relayed: true }))
           .then(relaySendResponse(sendResponse))
           .catch(err => sendResponse({ ok: false, error: String(err) }));
         return true;

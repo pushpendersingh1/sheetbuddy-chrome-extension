@@ -8,7 +8,10 @@ console.log('[SheetBuddy] Offscreen document ready');
 const narrator = new TTSNarrator(WORKER_URL);
 let transcriber: Transcriber | null = null;
 
-chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: Message & { _relayed?: boolean }, _sender, sendResponse) => {
+  // chrome.runtime.sendMessage broadcasts to ALL extension contexts.
+  // Ignore messages not explicitly relayed by the background to avoid double-processing.
+  if (!message._relayed) return;
   switch (message.type) {
     case 'SPEAK': {
       const { text } = (message.payload ?? {}) as SpeakPayload;
