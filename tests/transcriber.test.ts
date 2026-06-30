@@ -62,6 +62,7 @@ Object.defineProperty(globalThis, 'navigator', {
 
 class AudioContextStub {
   sampleRate = 16000;
+  resume = vi.fn(async () => {});
   close = vi.fn(async () => {});
   createMediaStreamSource = vi.fn(() => ({
     connect: vi.fn(),

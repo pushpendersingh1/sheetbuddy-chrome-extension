@@ -49,6 +49,8 @@ export class Transcriber {
     };
 
     this.audioCtx = new AudioContext({ sampleRate: 16000 });
+    // Offscreen documents have no user gesture — context starts suspended without this.
+    await this.audioCtx.resume();
     const source = this.audioCtx.createMediaStreamSource(this.stream);
     const processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
 

@@ -145,6 +145,10 @@ document.addEventListener('DOMContentLoaded', () => {
       log('err', `Mic permission: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
+    // Stop any existing session first so offscreen doesn't reject with "Already recording"
+    await new Promise<void>(resolve => {
+      chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }, () => resolve());
+    });
     chrome.runtime.sendMessage({ type: 'START_RECORDING' }, (r: unknown) => {
       const res = r as { ok: boolean; error?: string };
       if (res?.ok) {
