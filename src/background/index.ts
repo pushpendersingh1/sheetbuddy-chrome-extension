@@ -38,8 +38,14 @@ function ensureOffscreen(): Promise<void> {
 
 function relaySendResponse(
   sendResponse: (r: unknown) => void,
+  label: string,
 ): (r: unknown) => void {
-  return (r) => sendResponse(r ?? { ok: false, error: 'No response from offscreen' });
+  return (r) => {
+    if (r == null) {
+      console.error(`[SheetBuddy] No response from offscreen for ${label}`);
+    }
+    sendResponse(r ?? { ok: false, error: 'No response from offscreen' });
+  };
 }
 
 chrome.runtime.onMessage.addListener(
@@ -53,8 +59,11 @@ chrome.runtime.onMessage.addListener(
       case 'STOP_RECORDING': {
         ensureOffscreen()
           .then(() => chrome.runtime.sendMessage({ ...message, _relayed: true }))
-          .then(relaySendResponse(sendResponse))
-          .catch(err => sendResponse({ ok: false, error: String(err) }));
+          .then(relaySendResponse(sendResponse, message.type))
+          .catch(err => {
+            console.error(`[SheetBuddy] Relay failed for ${message.type}:`, err);
+            sendResponse({ ok: false, error: String(err) });
+          });
         return true;
       }
 
@@ -62,15 +71,20 @@ chrome.runtime.onMessage.addListener(
         if (tabId !== null) activeTabId = tabId;
         ensureOffscreen()
           .then(() => chrome.runtime.sendMessage({ ...message, _relayed: true }))
-          .then(relaySendResponse(sendResponse))
-          .catch(err => sendResponse({ ok: false, error: String(err) }));
+          .then(relaySendResponse(sendResponse, message.type))
+          .catch(err => {
+            console.error(`[SheetBuddy] Relay failed for ${message.type}:`, err);
+            sendResponse({ ok: false, error: String(err) });
+          });
         return true;
       }
 
       case 'TRANSCRIPT_PARTIAL':
       case 'TRANSCRIPT_FINAL': {
         if (activeTabId !== null) {
-          chrome.tabs.sendMessage(activeTabId, message).catch(() => {});
+          chrome.tabs.sendMessage(activeTabId, message).catch((err: unknown) => {
+            console.warn('[SheetBuddy] Could not forward transcript to tab:', err);
+          });
         }
         sendResponse({ ok: true });
         break;
@@ -78,13 +92,16 @@ chrome.runtime.onMessage.addListener(
 
       case 'NARRATION_DONE': {
         if (activeTabId !== null) {
-          chrome.tabs.sendMessage(activeTabId, message).catch(() => {});
+          chrome.tabs.sendMessage(activeTabId, message).catch((err: unknown) => {
+            console.warn('[SheetBuddy] Could not forward NARRATION_DONE to tab:', err);
+          });
         }
         sendResponse({ ok: true });
         break;
       }
 
       default:
+        console.warn('[SheetBuddy] Background received unhandled message type:', message.type);
         sendResponse({ ok: true });
     }
   },

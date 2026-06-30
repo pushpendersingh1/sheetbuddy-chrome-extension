@@ -68,6 +68,9 @@ export class Transcriber {
         this.onTranscript(data.text ?? '', false);
       } else if (data.message_type === 'FinalTranscript') {
         this.onTranscript(data.text ?? '', true);
+      } else {
+        // Unrecognized format — log so future API changes are immediately visible
+        console.warn('[SheetBuddy] Unrecognized AssemblyAI message:', JSON.stringify(data));
       }
     };
 

@@ -11,7 +11,10 @@ let transcriber: Transcriber | null = null;
 chrome.runtime.onMessage.addListener((message: Message & { _relayed?: boolean }, _sender, sendResponse) => {
   // chrome.runtime.sendMessage broadcasts to ALL extension contexts.
   // Ignore messages not explicitly relayed by the background to avoid double-processing.
-  if (!message._relayed) return;
+  if (!message._relayed) {
+    console.log('[SheetBuddy] Offscreen ignored direct broadcast (not relayed):', message.type);
+    return;
+  }
   switch (message.type) {
     case 'SPEAK': {
       const { text } = (message.payload ?? {}) as SpeakPayload;
