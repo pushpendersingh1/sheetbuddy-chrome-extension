@@ -1,5 +1,6 @@
 export type MessageType =
   | 'USER_QUERY'
+  | 'OPEN_INPUT_BAR'
   | 'TASK_STARTED'
   | 'TASK_COMPLETE'
   | 'PAUSE_REQUESTED'
@@ -18,6 +19,10 @@ export type MessageType =
 export interface UserQueryPayload {
   text: string;
   screenshot?: string; // base64, only for visual questions
+}
+
+export interface OpenInputBarPayload {
+  mode: 'voice' | 'text' | 'both';
 }
 
 export interface PauseAtStepPayload {

@@ -1,4 +1,4 @@
-type CreatureState = 'idle' | 'active' | 'paused';
+type CreatureState = 'idle' | 'active' | 'paused' | 'listening' | 'thinking';
 
 const STYLES = `
   :host {
@@ -31,6 +31,14 @@ const STYLES = `
     filter: grayscale(70%);
   }
 
+  .creature--listening {
+    animation: float 3s ease-in-out infinite, pulse-mic 0.8s ease-in-out infinite;
+  }
+
+  .creature--thinking {
+    animation: float 3s ease-in-out infinite, spin-glow 1.5s linear infinite;
+  }
+
   @keyframes float {
     0%, 100% { transform: translateY(0); }
     50%       { transform: translateY(-7px); }
@@ -39,6 +47,16 @@ const STYLES = `
   @keyframes glow {
     0%, 100% { filter: drop-shadow(0 0 4px rgba(66, 133, 244, 0.5)); }
     50%       { filter: drop-shadow(0 0 14px rgba(66, 133, 244, 1)); }
+  }
+
+  @keyframes pulse-mic {
+    0%, 100% { filter: drop-shadow(0 0 6px rgba(234, 67, 53, 0.7)); }
+    50%       { filter: drop-shadow(0 0 16px rgba(234, 67, 53, 1)); }
+  }
+
+  @keyframes spin-glow {
+    0%, 100% { filter: drop-shadow(0 0 8px rgba(66, 133, 244, 0.7)); }
+    50%       { filter: drop-shadow(0 0 18px rgba(66, 133, 244, 1)); }
   }
 `;
 
@@ -58,6 +76,8 @@ export class SheetBuddyCreature {
   private el: HTMLElement;
   private state: CreatureState = 'idle';
 
+  onClick: (() => void) | null = null;
+
   constructor() {
     this.host = document.createElement('div');
     this.host.id = 'sheetbuddy-creature-host';
@@ -70,7 +90,7 @@ export class SheetBuddyCreature {
     this.el = document.createElement('div');
     this.el.className = 'creature';
     this.el.innerHTML = SVG;
-    this.el.addEventListener('click', () => console.log('input bar triggered'));
+    this.el.addEventListener('click', () => this.onClick?.());
     shadow.appendChild(this.el);
   }
 

@@ -91,17 +91,59 @@ describe('SheetBuddyCreature', () => {
       creature.setState('active');
       expect(el.className).toBe(before);
     });
+
+    it('transitions to listening: getState returns listening and creature--listening class is added', () => {
+      creature.setState('listening');
+      expect(creature.getState()).toBe('listening');
+      const host = document.body.querySelector('#sheetbuddy-creature-host') as HTMLElement;
+      const el = host.shadowRoot!.querySelector('.creature') as HTMLElement;
+      expect(el.classList.contains('creature--listening')).toBe(true);
+    });
+
+    it('transitions to thinking: getState returns thinking and creature--thinking class is added', () => {
+      creature.setState('thinking');
+      expect(creature.getState()).toBe('thinking');
+      const host = document.body.querySelector('#sheetbuddy-creature-host') as HTMLElement;
+      const el = host.shadowRoot!.querySelector('.creature') as HTMLElement;
+      expect(el.classList.contains('creature--thinking')).toBe(true);
+    });
+
+    it('returns to idle from listening: creature--listening class is removed', () => {
+      creature.setState('listening');
+      creature.setState('idle');
+      expect(creature.getState()).toBe('idle');
+      const host = document.body.querySelector('#sheetbuddy-creature-host') as HTMLElement;
+      const el = host.shadowRoot!.querySelector('.creature') as HTMLElement;
+      expect(el.classList.contains('creature--listening')).toBe(false);
+    });
+
+    it('returns to idle from thinking: creature--thinking class is removed', () => {
+      creature.setState('thinking');
+      creature.setState('idle');
+      expect(creature.getState()).toBe('idle');
+      const host = document.body.querySelector('#sheetbuddy-creature-host') as HTMLElement;
+      const el = host.shadowRoot!.querySelector('.creature') as HTMLElement;
+      expect(el.classList.contains('creature--thinking')).toBe(false);
+    });
   });
 
-  describe('click', () => {
-    it('logs "input bar triggered" when creature element is clicked', () => {
-      creature.mount();
-      const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  describe('onClick', () => {
+    beforeEach(() => { creature.mount(); });
+
+    it('calls onClick callback when creature element is clicked', () => {
+      let called = false;
+      creature.onClick = () => { called = true; };
       const host = document.body.querySelector('#sheetbuddy-creature-host') as HTMLElement;
       const el = host.shadowRoot!.querySelector('.creature') as HTMLElement;
       el.click();
-      expect(spy).toHaveBeenCalledWith('input bar triggered');
-      spy.mockRestore();
+      expect(called).toBe(true);
+    });
+
+    it('does not throw when onClick is null', () => {
+      creature.onClick = null;
+      const host = document.body.querySelector('#sheetbuddy-creature-host') as HTMLElement;
+      const el = host.shadowRoot!.querySelector('.creature') as HTMLElement;
+      expect(() => el.click()).not.toThrow();
     });
   });
 });
