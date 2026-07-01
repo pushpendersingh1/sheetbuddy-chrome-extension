@@ -1,6 +1,7 @@
-import type { Message, UserQueryPayload } from '../types/messages';
+import type { Message, RelayedMessage, UserQueryPayload } from '../types/messages';
 import { makeDevReloader } from './dev-reload';
 import { makeSheetPlanHandler } from './sheet-plan';
+import { makeRelay } from './relay';
 import { WORKER_URL } from '../config';
 
 // __DEV__ is true only in `npm run watch` (esbuild define).
@@ -52,39 +53,22 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 let activeTabId: number | null = null;
 
-// Singleton promise prevents concurrent createDocument() calls (TOCTOU race).
-let offscreenPromise: Promise<void> | null = null;
-
-function ensureOffscreen(): Promise<void> {
-  offscreenPromise ??= chrome.offscreen.hasDocument().then(async (hasDoc) => {
-    if (!hasDoc) {
-      await chrome.offscreen.createDocument({
-        url: chrome.runtime.getURL('offscreen.html'),
-        reasons: [
-          chrome.offscreen.Reason.USER_MEDIA,
-          chrome.offscreen.Reason.AUDIO_PLAYBACK,
-        ],
-        justification: 'Microphone capture and TTS audio playback for SheetBuddy',
-      });
-    }
-  }).catch(err => {
-    offscreenPromise = null;
-    throw err;
-  });
-  return offscreenPromise;
-}
-
-function relaySendResponse(
-  sendResponse: (r: unknown) => void,
-  label: string,
-): (r: unknown) => void {
-  return (r) => {
-    if (r == null) {
-      console.error(`[SheetBuddy] No response from offscreen for ${label}`);
-    }
-    sendResponse(r ?? { ok: false, error: 'No response from offscreen' });
-  };
-}
+const relayToOffscreen = makeRelay({
+  ensureOffscreen: () =>
+    chrome.offscreen.hasDocument().then(async (hasDoc) => {
+      if (!hasDoc) {
+        await chrome.offscreen.createDocument({
+          url: chrome.runtime.getURL('offscreen.html'),
+          reasons: [
+            chrome.offscreen.Reason.USER_MEDIA,
+            chrome.offscreen.Reason.AUDIO_PLAYBACK,
+          ],
+          justification: 'Microphone capture and TTS audio playback for SheetBuddy',
+        });
+      }
+    }),
+  sendMessage: (message: RelayedMessage) => chrome.runtime.sendMessage(message),
+});
 
 async function compressScreenshot(dataUrl: string): Promise<string> {
   const res = await fetch(dataUrl);
@@ -125,25 +109,13 @@ chrome.runtime.onMessage.addListener(
       case 'SPEAK':
       case 'STOP_NARRATION':
       case 'STOP_RECORDING': {
-        ensureOffscreen()
-          .then(() => chrome.runtime.sendMessage({ ...message, _relayed: true }))
-          .then(relaySendResponse(sendResponse, message.type))
-          .catch(err => {
-            console.error(`[SheetBuddy] Relay failed for ${message.type}:`, err);
-            sendResponse({ ok: false, error: String(err) });
-          });
+        relayToOffscreen(message, sendResponse);
         return true;
       }
 
       case 'START_RECORDING': {
         if (tabId !== null) activeTabId = tabId;
-        ensureOffscreen()
-          .then(() => chrome.runtime.sendMessage({ ...message, _relayed: true }))
-          .then(relaySendResponse(sendResponse, message.type))
-          .catch(err => {
-            console.error(`[SheetBuddy] Relay failed for ${message.type}:`, err);
-            sendResponse({ ok: false, error: String(err) });
-          });
+        relayToOffscreen(message, sendResponse);
         return true;
       }
 
