@@ -1,22 +1,15 @@
 import type { Message, UserQueryPayload } from '../types/messages';
+import { makeDevReloader } from './dev-reload';
 
 // Dev auto-reload — polls the local build server started by `npm run watch`.
-// When the build version changes (a rebuild just finished) it calls
-// chrome.runtime.reload(), which is identical to the Reload button on
-// chrome://extensions. The fetch fails silently in production where no
-// server is running, so this code is safe to ship as-is.
-const DEV_RELOAD_URL = 'http://127.0.0.1:35729/';
-let devBuildVersion: number | null = null;
-
-async function devCheckReload(): Promise<void> {
-  try {
-    const res = await fetch(DEV_RELOAD_URL, { cache: 'no-store' });
-    if (!res.ok) return;
-    const { v } = (await res.json()) as { v: number };
-    if (devBuildVersion === null) { devBuildVersion = v; return; } // seed on first run
-    if (v !== devBuildVersion) chrome.runtime.reload();
-  } catch { /* dev server not running — no-op */ }
-}
+// When the build version changes it calls chrome.runtime.reload() — identical
+// to the Reload button on chrome://extensions. fetch() fails silently in
+// production where no server is running, so this ships as-is.
+const devCheckReload = makeDevReloader({
+  fetchFn: globalThis.fetch.bind(globalThis),
+  reload: () => chrome.runtime.reload(),
+  url: 'http://127.0.0.1:35729/',
+});
 
 // ~2 s interval (Chrome clamps to ≥1 min for published extensions,
 // but unpacked/dev extensions have no minimum floor).
