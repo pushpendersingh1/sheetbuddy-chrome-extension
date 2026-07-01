@@ -1,3 +1,5 @@
+import { observeGridAnchor } from './grid-anchor';
+
 type CreatureState = 'idle' | 'active' | 'paused' | 'listening' | 'thinking';
 
 const STYLES = `
@@ -96,37 +98,11 @@ export class SheetBuddyCreature {
 
   mount(): void {
     document.body.appendChild(this.host);
-    this.observeLayout();
-  }
-
-  private observeLayout(): void {
-    // Sheets shrinks its grid container when the sidebar opens; observe that
-    // element so we can reposition without polling.
-    const GRID_SELECTORS = [
-      '#waffle-grid-container',
-      '#waffle-scrollable-wrapper',
-      '.grid-scrollable-wrapper',
-    ];
-    const anchor =
-      GRID_SELECTORS.map(s => document.querySelector<HTMLElement>(s)).find(Boolean)
-      ?? document.body;
-
     const GAP = 16;
-    let rafId = 0;
-
-    const reposition = () => {
-      rafId = 0;
-      const spaceOnRight = window.innerWidth - anchor.getBoundingClientRect().right;
+    observeGridAnchor(rect => {
+      const spaceOnRight = window.innerWidth - rect.right;
       this.host.style.right = `${spaceOnRight + GAP}px`;
-    };
-
-    // Run once immediately so the initial position is layout-accurate.
-    reposition();
-
-    new ResizeObserver(() => {
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(reposition);
-    }).observe(anchor);
+    });
   }
 
   setState(state: CreatureState): void {
