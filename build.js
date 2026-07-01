@@ -135,8 +135,11 @@ const sharedOptions = {
   sourcemap: true,
   logLevel: /** @type {'info'} */ ('info'),
   // __DEV__ is tree-shaken away in production builds, eliminating the dev-reload
-  // polling loop and its chrome.alarms usage entirely.
+  // polling loop and its chrome.alarms usage entirely. Dead-code elimination of
+  // the resulting `if (false)` branch requires minifySyntax — without it esbuild
+  // substitutes the identifier but leaves the unreachable branch's code in place.
   define: { __DEV__: watch ? 'true' : 'false' },
+  minifySyntax: !watch,
 };
 
 async function build() {
