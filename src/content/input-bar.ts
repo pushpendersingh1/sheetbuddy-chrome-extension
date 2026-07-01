@@ -33,6 +33,19 @@ const STYLES = `
     color: #3c4043;
   }
 
+  .mic-btn--preparing {
+    background: #e8f0fe;
+    border-color: #4285f4;
+    color: #4285f4;
+    cursor: default;
+    animation: pulse-border 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse-border {
+    0%, 100% { border-color: #4285f4; opacity: 1; }
+    50%       { border-color: #aecbfa; opacity: 0.7; }
+  }
+
   .mic-btn--recording {
     background: #fce8e6;
     border-color: #ea4335;
@@ -187,16 +200,38 @@ export class InputBar {
 
   private startRecording(): void {
     this.isRecording = true;
-    this.micBtn.classList.add('mic-btn--recording');
-    this.micBtn.textContent = '⏹ Stop';
+    // Show preparing state immediately — mic + token aren't ready yet.
+    // setMicReady() transitions this to the active recording state.
+    this.micBtn.classList.add('mic-btn--preparing');
+    this.micBtn.textContent = 'Starting...';
+    this.micBtn.disabled = true;
     this.lockField();
     this.onStartRecording?.();
   }
 
+  /** Called by the content script once START_RECORDING confirms the mic is live. */
+  setMicReady(): void {
+    if (!this.isRecording) return; // bar was closed before mic was ready
+    this.micBtn.classList.remove('mic-btn--preparing');
+    this.micBtn.classList.add('mic-btn--recording');
+    this.micBtn.textContent = 'Stop';
+    this.micBtn.disabled = false;
+  }
+
+  /** Called by the content script if START_RECORDING fails — resets to idle. */
+  setMicError(): void {
+    this.isRecording = false;
+    this.micBtn.classList.remove('mic-btn--preparing', 'mic-btn--recording');
+    this.micBtn.textContent = '🎙 Tap to speak';
+    this.micBtn.disabled = false;
+    this.unlockField();
+  }
+
   private stopRecording(): void {
     this.isRecording = false;
-    this.micBtn.classList.remove('mic-btn--recording');
+    this.micBtn.classList.remove('mic-btn--preparing', 'mic-btn--recording');
     this.micBtn.textContent = '🎙 Tap to speak';
+    this.micBtn.disabled = false;
     this.onStopRecording?.();
   }
 

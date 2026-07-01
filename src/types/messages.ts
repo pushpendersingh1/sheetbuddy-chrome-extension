@@ -14,7 +14,8 @@ export type MessageType =
   | 'RUN_PRIMITIVE'
   | 'SPEAK'
   | 'START_RECORDING'
-  | 'STOP_RECORDING';
+  | 'STOP_RECORDING'
+  | 'DEBUG';
 
 export interface UserQueryPayload {
   text: string;

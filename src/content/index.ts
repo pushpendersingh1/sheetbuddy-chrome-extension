@@ -20,11 +20,32 @@ if (creatureHost) inputBar.dismissExclusions.push(creatureHost);
 creature.onClick = () => inputBar.toggle();
 
 // Wire input bar callbacks → chrome messaging + creature state
+// Debug element: content script writes here, main world reads via dataset
+const dbg = document.createElement('div');
+dbg.id = 'sheetbuddy-debug';
+dbg.style.display = 'none';
+document.body.appendChild(dbg);
+
 inputBar.onStartRecording = () => {
   creature.setState('listening');
-  chrome.runtime.sendMessage({ type: 'START_RECORDING' }).catch((err: unknown) => {
-    console.error('[SheetBuddy] Failed to send START_RECORDING:', err);
-  });
+  dbg.dataset.startAck = 'pending';
+  chrome.runtime.sendMessage({ type: 'START_RECORDING' })
+    .then((resp: unknown) => {
+      const r = resp as { ok: boolean; error?: string } | undefined;
+      dbg.dataset.startAck = JSON.stringify(r);
+      if (r?.ok) {
+        // Mic + WS are live — transition button from "Starting..." to "Stop"
+        inputBar.setMicReady();
+      } else {
+        inputBar.setMicError();
+        creature.setState('idle');
+      }
+    })
+    .catch((err: unknown) => {
+      dbg.dataset.startAck = `catch:${String(err)}`;
+      inputBar.setMicError();
+      creature.setState('idle');
+    });
 };
 
 inputBar.onStopRecording = () => {
@@ -62,6 +83,8 @@ chrome.runtime.onMessage.addListener(
 
     if (message.type === 'TRANSCRIPT_PARTIAL') {
       const { text } = (message.payload ?? {}) as TranscriptPayload;
+      dbg.dataset.lastPartial = text;
+      dbg.dataset.transcriptCount = String(Number(dbg.dataset.transcriptCount ?? 0) + 1);
       inputBar.setTranscript(text);
       sendResponse({ ok: true });
       return;
@@ -69,6 +92,8 @@ chrome.runtime.onMessage.addListener(
 
     if (message.type === 'TRANSCRIPT_FINAL') {
       const { text } = (message.payload ?? {}) as TranscriptPayload;
+      dbg.dataset.lastFinal = text;
+      dbg.dataset.transcriptCount = String(Number(dbg.dataset.transcriptCount ?? 0) + 1);
       inputBar.setTranscript(text);
       inputBar.unlockField();
       sendResponse({ ok: true });
@@ -78,6 +103,15 @@ chrome.runtime.onMessage.addListener(
     if (message.type === 'OPEN_INPUT_BAR') {
       const { mode } = (message.payload ?? {}) as OpenInputBarPayload;
       inputBar.open(mode);
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (message.type === 'DEBUG') {
+      const { msg } = (message.payload ?? {}) as { msg: string };
+      const log: string[] = JSON.parse(dbg.dataset.debugLog ?? '[]');
+      log.push(`${new Date().toISOString().slice(11, 23)} ${msg}`);
+      dbg.dataset.debugLog = JSON.stringify(log.slice(-30));
       sendResponse({ ok: true });
       return;
     }

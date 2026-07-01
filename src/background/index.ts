@@ -157,10 +157,11 @@ chrome.runtime.onMessage.addListener(
         break;
       }
 
-      case 'NARRATION_DONE': {
+      case 'NARRATION_DONE':
+      case 'DEBUG': {
         if (activeTabId !== null) {
           chrome.tabs.sendMessage(activeTabId, message).catch((err: unknown) => {
-            console.warn('[SheetBuddy] Could not forward NARRATION_DONE to tab:', err);
+            console.warn(`[SheetBuddy] Could not forward ${message.type} to tab:`, err);
           });
         }
         sendResponse({ ok: true });

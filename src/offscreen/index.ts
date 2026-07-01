@@ -45,13 +45,19 @@ chrome.runtime.onMessage.addListener((message: Message & { _relayed?: boolean },
         sendResponse({ ok: false, error: 'Already recording' });
         break;
       }
-      transcriber = new Transcriber(WORKER_URL, (text, isFinal) => {
-        const payload: TranscriptPayload = { text, isFinal };
-        chrome.runtime.sendMessage({
-          type: isFinal ? 'TRANSCRIPT_FINAL' : 'TRANSCRIPT_PARTIAL',
-          payload,
-        });
-      });
+      transcriber = new Transcriber(
+        WORKER_URL,
+        (text, isFinal) => {
+          const payload: TranscriptPayload = { text, isFinal };
+          chrome.runtime.sendMessage({
+            type: isFinal ? 'TRANSCRIPT_FINAL' : 'TRANSCRIPT_PARTIAL',
+            payload,
+          });
+        },
+        (msg) => {
+          chrome.runtime.sendMessage({ type: 'DEBUG', payload: { msg } });
+        },
+      );
       transcriber.start()
         .then(() => sendResponse({ ok: true }))
         .catch((err: unknown) => {
