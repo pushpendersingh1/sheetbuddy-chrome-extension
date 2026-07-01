@@ -2,6 +2,7 @@ import type { Message, SpeakPayload, TranscriptPayload } from '../types/messages
 import { WORKER_URL } from '../config';
 import { TTSNarrator } from './narrator';
 import { Transcriber } from './transcriber';
+import { AssemblyAIAdapter } from './assemblyai-adapter';
 
 console.log('[SheetBuddy] Offscreen document ready');
 
@@ -46,7 +47,7 @@ chrome.runtime.onMessage.addListener((message: Message & { _relayed?: boolean },
         break;
       }
       transcriber = new Transcriber(
-        WORKER_URL,
+        new AssemblyAIAdapter(WORKER_URL),
         (text, isFinal) => {
           const payload: TranscriptPayload = { text, isFinal };
           chrome.runtime.sendMessage({

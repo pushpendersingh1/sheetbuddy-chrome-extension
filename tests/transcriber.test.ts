@@ -1,41 +1,38 @@
 import { describe, it, expect, beforeEach, vi, type MockInstance } from 'vitest';
 import { Transcriber } from '../src/offscreen/transcriber';
+import type { StreamingSTT, TranscriptCallback, DebugCallback } from '../src/offscreen/stt';
 
-// ---- WebSocket stub ----
+// ---- InMemorySTT — in-process test double, no WebSocket or fetch globals needed ----
 
-class WebSocketStub {
-  static OPEN = 1;
-  static CLOSING = 2;
-  static CLOSED = 3;
+class InMemorySTT implements StreamingSTT {
+  frames: ArrayBuffer[] = [];
+  onTranscript: TranscriptCallback = () => {};
+  onDebug: DebugCallback = () => {};
+  connectCalled = false;
+  closeCalled = false;
 
-  url: string;
-  readyState = WebSocketStub.OPEN;
-  onopen: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
-  onerror: ((err: unknown) => void) | null = null;
-
-  send = vi.fn();
-  close = vi.fn(() => { this.readyState = WebSocketStub.CLOSED; });
-
-  constructor(url: string) {
-    this.url = url;
-    WebSocketStub.lastInstance = this;
+  connect() {
+    this.connectCalled = true;
+    return Promise.resolve();
   }
 
-  static lastInstance: WebSocketStub;
+  sendAudio(pcm: ArrayBuffer) {
+    this.frames.push(pcm);
+  }
 
-  simulateMessage(data: object) {
-    this.onmessage?.({ data: JSON.stringify(data) });
+  close() {
+    this.closeCalled = true;
+  }
+
+  simulateTranscript(text: string, isFinal: boolean) {
+    this.onTranscript(text, isFinal);
   }
 }
-
-Object.defineProperty(globalThis, 'WebSocket', { value: WebSocketStub, writable: true });
 
 // ---- MediaStream stub ----
 
 function makeTrackStub() {
-  return { stop: vi.fn(), kind: 'audio' };
+  return { stop: vi.fn(), kind: 'audio', label: 'Mic', enabled: true, muted: false, readyState: 'live' };
 }
 
 function makeStreamStub() {
@@ -62,6 +59,8 @@ Object.defineProperty(globalThis, 'navigator', {
 // ---- AudioContext stub ----
 
 class AudioContextStub {
+  static lastInstance: AudioContextStub;
+  state = 'suspended';
   sampleRate = 16000;
   resume = vi.fn(async () => {});
   close = vi.fn(async () => {});
@@ -72,106 +71,62 @@ class AudioContextStub {
     connect: vi.fn(),
     onaudioprocess: null as unknown,
   }));
+  constructor() {
+    AudioContextStub.lastInstance = this;
+  }
 }
 
 Object.defineProperty(globalThis, 'AudioContext', { value: AudioContextStub, writable: true });
 
-// ---- fetch stub ----
-
-const TOKEN = 'test-token-abc123';
-
-function makeFetchMock() {
-  return vi.fn(async () => ({
-    ok: true,
-    json: async () => ({ token: TOKEN }),
-  }));
-}
-
-const WORKER_URL = 'https://worker.example.com';
-
 describe('Transcriber', () => {
+  let stt: InMemorySTT;
   let transcriber: Transcriber;
   let onTranscript: MockInstance;
-  let fetchMock: MockInstance;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    WebSocketStub.lastInstance = undefined as unknown as WebSocketStub;
-    fetchMock = makeFetchMock();
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    streamStub._tracks[0].stop.mockReset?.();
     onTranscript = vi.fn();
-    transcriber = new Transcriber(WORKER_URL, onTranscript as unknown as (text: string, isFinal: boolean) => void);
+    stt = new InMemorySTT();
+    transcriber = new Transcriber(stt, onTranscript as unknown as TranscriptCallback);
     await transcriber.start();
   });
 
-  it('fetches a token from POST /transcribe-token on start()', () => {
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe(`${WORKER_URL}/transcribe-token`);
-    expect(opts.method).toBe('POST');
-  });
-
-  it('opens a WebSocket to the AssemblyAI URL with the token', () => {
-    const ws = WebSocketStub.lastInstance;
-    expect(ws.url).toContain('wss://streaming.assemblyai.com/v3/ws');
-    expect(ws.url).toContain(`token=${TOKEN}`);
-    expect(ws.url).toContain('sample_rate=16000');
-    expect(ws.url).toContain('encoding=pcm_s16le');
-    expect(ws.url).toContain('speech_model=universal-streaming-english');
+  it('calls stt.connect() on start()', () => {
+    expect(stt.connectCalled).toBe(true);
   });
 
   it('calls getUserMedia for audio', () => {
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({ audio: true });
   });
 
-  it('fires onTranscript with isFinal=false on PartialTranscript', () => {
-    const ws = WebSocketStub.lastInstance;
-    ws.simulateMessage({ message_type: 'PartialTranscript', text: 'hello' });
+  it('creates AudioContext and calls resume() for offscreen document', () => {
+    expect(AudioContextStub.lastInstance.resume).toHaveBeenCalled();
+  });
+
+  it('fires onTranscript when stt emits a partial transcript', () => {
+    stt.simulateTranscript('hello', false);
     expect(onTranscript).toHaveBeenCalledWith('hello', false);
   });
 
-  it('fires onTranscript with isFinal=true on FinalTranscript', () => {
-    const ws = WebSocketStub.lastInstance;
-    ws.simulateMessage({ message_type: 'FinalTranscript', text: 'hello world' });
+  it('fires onTranscript when stt emits a final transcript', () => {
+    stt.simulateTranscript('hello world', true);
     expect(onTranscript).toHaveBeenCalledWith('hello world', true);
   });
 
-  it('fires onTranscript with isFinal=false on v3 Turn with end_of_turn=false', () => {
-    const ws = WebSocketStub.lastInstance;
-    ws.simulateMessage({ type: 'Turn', transcript: 'hello', end_of_turn: false });
-    expect(onTranscript).toHaveBeenCalledWith('hello', false);
-  });
-
-  it('fires onTranscript with isFinal=true on v3 Turn with end_of_turn=true', () => {
-    const ws = WebSocketStub.lastInstance;
-    ws.simulateMessage({ type: 'Turn', transcript: 'hello world', end_of_turn: true });
-    expect(onTranscript).toHaveBeenCalledWith('hello world', true);
-  });
-
-  it('does not fire onTranscript on v3 Turn with empty transcript', () => {
-    const ws = WebSocketStub.lastInstance;
-    ws.simulateMessage({ type: 'Turn', transcript: '', end_of_turn: false });
-    expect(onTranscript).not.toHaveBeenCalled();
-  });
-
-  it('ignores unknown message types without calling onTranscript', () => {
-    const ws = WebSocketStub.lastInstance;
-    ws.simulateMessage({ message_type: 'SessionBegins', session_id: '123' });
-    expect(onTranscript).not.toHaveBeenCalled();
+  it('wires onDebug through to the stt adapter', async () => {
+    const onDebug = vi.fn();
+    const stt2 = new InMemorySTT();
+    const t = new Transcriber(stt2, vi.fn() as unknown as TranscriptCallback, onDebug as unknown as DebugCallback);
+    await t.start();
+    expect(stt2.onDebug).toBe(onDebug);
+    expect(onDebug).toHaveBeenCalled();
   });
 
   describe('stop()', () => {
-    it('closes the WebSocket without sending any frame (v3 closes socket directly)', () => {
-      const ws = WebSocketStub.lastInstance;
+    it('calls stt.close()', () => {
       transcriber.stop();
-      expect(ws.send).not.toHaveBeenCalled();
-      expect(ws.close).toHaveBeenCalled();
-    });
-
-    it('closes the WebSocket', () => {
-      const ws = WebSocketStub.lastInstance;
-      transcriber.stop();
-      expect(ws.close).toHaveBeenCalled();
+      expect(stt.closeCalled).toBe(true);
     });
 
     it('stops all mic tracks', () => {
@@ -181,37 +136,20 @@ describe('Transcriber', () => {
       }
     });
 
-    it('does not send on WebSocket if already closed', () => {
-      const ws = WebSocketStub.lastInstance;
-      ws.readyState = WebSocketStub.CLOSED;
-      transcriber.stop();
-      expect(ws.send).not.toHaveBeenCalled();
-    });
-
-    it('closes a CONNECTING WebSocket without sending terminate_session', () => {
-      const ws = WebSocketStub.lastInstance;
-      ws.readyState = WebSocketStub.OPEN; // reset to OPEN first by default
-      // Simulate CONNECTING state
-      ws.readyState = 0; // WebSocket.CONNECTING = 0
-      transcriber.stop();
-      expect(ws.close).toHaveBeenCalled();
-      expect(ws.send).not.toHaveBeenCalled();
-    });
-
     it('calls audioCtx.close()', () => {
-      // audioCtx is the AudioContextStub instance created during start()
       transcriber.stop();
-      // The stub's close mock should have been called
-      expect(AudioContextStub.prototype.close ?? vi.fn()).toBeDefined();
+      expect(AudioContextStub.lastInstance.close).toHaveBeenCalled();
     });
   });
 
   describe('start() error handling', () => {
-    it('throws when token request returns non-200', async () => {
-      const failFetch = vi.fn(async () => ({ ok: false, status: 429 }));
-      globalThis.fetch = failFetch as unknown as typeof fetch;
-      const t = new Transcriber(WORKER_URL, vi.fn() as unknown as (text: string, isFinal: boolean) => void);
-      await expect(t.start()).rejects.toThrow('Token request failed: 429');
+    it('propagates getUserMedia rejection', async () => {
+      const failSTT = new InMemorySTT();
+      (navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('Permission denied'),
+      );
+      const t = new Transcriber(failSTT, vi.fn() as unknown as TranscriptCallback);
+      await expect(t.start()).rejects.toThrow('Permission denied');
     });
   });
 });
