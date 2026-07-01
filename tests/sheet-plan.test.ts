@@ -46,7 +46,7 @@ function makeDeps(overrides: Partial<SheetPlanDeps> = {}): SheetPlanDeps {
 }
 
 describe('makeSheetPlanHandler', () => {
-  it('returns a plan and sends TASK_COMPLETE on a valid structured response', async () => {
+  it('returns a plan without sending TASK_COMPLETE (the execution engine owns that for plan outcomes)', async () => {
     const validPlan = {
       totalSteps: 1,
       summary: 'Summing column B',
@@ -70,7 +70,7 @@ describe('makeSheetPlanHandler', () => {
       sheetGid: SAMPLE_CONTEXT.sheetGid,
       spreadsheetId: SAMPLE_CONTEXT.spreadsheetId,
     });
-    expect(sendMessageToTab).toHaveBeenCalledWith(TAB_ID, { type: 'TASK_COMPLETE' });
+    expect(sendMessageToTab).not.toHaveBeenCalledWith(TAB_ID, { type: 'TASK_COMPLETE' });
   });
 
   it("carries the collected sheet's gid and spreadsheetId, not a hardcoded value", async () => {

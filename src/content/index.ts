@@ -1,4 +1,4 @@
-import type { Message, RunPrimitivePayload, TranscriptPayload, OpenInputBarPayload, UserQueryPayload } from '../types/messages';
+import type { Message, RunPrimitivePayload, TranscriptPayload, OpenInputBarPayload, UserQueryPayload, PauseAtStepPayload } from '../types/messages';
 import { handlePrimitive } from './router';
 import { SheetBuddyCreature } from './creature';
 import { InputBar } from './input-bar';
@@ -16,8 +16,29 @@ inputBar.mount();
 const creatureHost = document.querySelector('#sheetbuddy-creature-host');
 if (creatureHost) inputBar.dismissExclusions.push(creatureHost);
 
-// Wire creature click → toggle bar (open if closed, close if open)
-creature.onClick = () => inputBar.toggle();
+// Wire creature click → pause mid-execution (matches Escape below), otherwise
+// toggle the input bar (open if closed, close if open).
+creature.onClick = () => {
+  if (creature.getState() === 'active') {
+    chrome.runtime.sendMessage({ type: 'PAUSE_REQUESTED' }).catch((err: unknown) => {
+      console.error('[SheetBuddy] Failed to send PAUSE_REQUESTED:', err);
+    });
+    return;
+  }
+  inputBar.toggle();
+};
+
+// Escape pauses mid-execution — capture phase so it fires before Sheets' own
+// Escape handling (e.g. cancelling edit mode). isTrusted excludes the engine's
+// own pressEscape() primitive, which dispatches a synthetic Escape as part of
+// executing a step and must not self-trigger a pause.
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (e.isTrusted && e.key === 'Escape' && creature.getState() === 'active') {
+    chrome.runtime.sendMessage({ type: 'PAUSE_REQUESTED' }).catch((err: unknown) => {
+      console.error('[SheetBuddy] Failed to send PAUSE_REQUESTED:', err);
+    });
+  }
+}, true);
 
 // Wire input bar callbacks → chrome messaging + creature state
 // Debug element: content script writes here, main world reads via dataset
@@ -118,7 +139,11 @@ chrome.runtime.onMessage.addListener(
 
     if (message.type === 'TASK_STARTED') creature.setState('active');
     else if (message.type === 'TASK_COMPLETE') creature.setState('idle');
-    else if (message.type === 'PAUSE_REQUESTED') creature.setState('paused');
+    else if (message.type === 'PAUSE_AT_STEP') {
+      const { currentStep, totalSteps } = (message.payload ?? {}) as PauseAtStepPayload;
+      console.log(`[SheetBuddy] Paused at step ${currentStep} of ${totalSteps}`);
+      creature.setState('paused');
+    }
 
     console.log('[SheetBuddy] Content received:', message.type);
   },

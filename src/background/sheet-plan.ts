@@ -153,9 +153,15 @@ export function makeSheetPlanHandler(deps: SheetPlanDeps) {
 
   return async function handleUserQuery(tabId: number, text: string): Promise<SheetPlanOutcome> {
     const outcome = await run(tabId, text);
-    // Always notify, even on error, so the creature doesn't stay stuck on
-    // "thinking" — tab may have closed by now, so failures here are ignored.
-    await sendMessageToTab(tabId, { type: 'TASK_COMPLETE' }).catch(() => {});
+    // A 'plan' outcome hands off to the execution engine, which owns TASK_STARTED/
+    // TASK_COMPLETE for the run it's about to perform — sending TASK_COMPLETE here
+    // too would flash the creature back to idle before execution even begins.
+    // advisor/error outcomes have no further processing, so notify here instead,
+    // even on error, so the creature doesn't stay stuck on "thinking" — tab may
+    // have closed by now, so failures here are ignored.
+    if (outcome.status !== 'plan') {
+      await sendMessageToTab(tabId, { type: 'TASK_COMPLETE' }).catch(() => {});
+    }
     return outcome;
   };
 }
