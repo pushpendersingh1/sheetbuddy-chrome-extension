@@ -4,12 +4,9 @@ export interface DevReloaderDeps {
   url: string;
 }
 
-/**
- * Returns a checkReload function that polls the dev build server.
- * First call seeds the version without reloading; subsequent calls
- * with a changed version trigger reload().
- * Injected deps make the logic unit-testable without Chrome APIs.
- */
+// Returns a checkReload() that polls the dev build server.
+// First call seeds the version (no reload); subsequent calls with a new version trigger reload().
+// Deps are injected so the logic is unit-testable without Chrome APIs.
 export function makeDevReloader({ fetchFn, reload, url }: DevReloaderDeps) {
   let seededVersion: number | null = null;
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest';
 import { makeDevReloader } from '../src/background/dev-reload';
 
 function makeResponse(v: number, ok = true) {
@@ -9,8 +9,8 @@ function makeResponse(v: number, ok = true) {
 }
 
 describe('makeDevReloader', () => {
-  let reload: ReturnType<typeof vi.fn>;
-  let fetchFn: ReturnType<typeof vi.fn>;
+  let reload: MockInstance;
+  let fetchFn: MockInstance;
   let checkReload: () => Promise<void>;
 
   beforeEach(() => {
@@ -44,17 +44,14 @@ describe('makeDevReloader', () => {
     expect(reload).toHaveBeenCalledOnce();
   });
 
-  it('does not reload again when called a third time with same new version', async () => {
+  it('does not re-seed after reload — third call with the same new version reloads again', async () => {
     fetchFn.mockResolvedValueOnce(makeResponse(1000));
-    await checkReload(); // seed
+    await checkReload(); // seed v=1000
     fetchFn.mockResolvedValueOnce(makeResponse(2000));
-    await checkReload(); // reload
-
-    // After reload() the service worker restarts, so in practice this
-    // scenario (continuing to call after reload) shouldn't occur — but
-    // the version is NOT re-seeded, so a third call with v=2000 fires again.
-    // Each instance of checkReload tracks its own seededVersion.
-    expect(reload).toHaveBeenCalledTimes(1);
+    await checkReload(); // v changed → first reload
+    fetchFn.mockResolvedValueOnce(makeResponse(2000));
+    await checkReload(); // v still 2000 but seededVersion is 1000 → reloads again
+    expect(reload).toHaveBeenCalledTimes(2);
   });
 
   it('silently ignores a non-OK response', async () => {
@@ -86,7 +83,7 @@ describe('makeDevReloader', () => {
   });
 
   it('separate reloader instances have independent version state', async () => {
-    const reload2 = vi.fn();
+    const reload2: MockInstance = vi.fn();
     const check2 = makeDevReloader({
       fetchFn: fetchFn as unknown as typeof globalThis.fetch,
       reload: reload2 as unknown as () => void,

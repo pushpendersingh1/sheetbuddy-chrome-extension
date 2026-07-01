@@ -68,10 +68,14 @@ function generateIcons() {
 
 // --- Static file copy ---
 function copyStatics() {
-  fs.copyFileSync(
-    path.join(__dirname, 'manifest.json'),
-    path.join(distDir, 'manifest.json'),
-  );
+  // Inject "alarms" only in watch/dev builds — the dev-reload polling loop needs
+  // it, but production installs should not declare an unused permission.
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
+  if (watch && !manifest.permissions.includes('alarms')) {
+    manifest.permissions.splice(1, 0, 'alarms'); // keep alphabetical order
+  }
+  fs.writeFileSync(path.join(distDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
   for (const [src, dest] of [
     ['src/offscreen/offscreen.html', 'offscreen.html'],
     ['src/devpanel/devpanel.html', 'devpanel.html'],
@@ -130,6 +134,9 @@ const sharedOptions = {
   format: /** @type {'iife'} */ ('iife'),
   sourcemap: true,
   logLevel: /** @type {'info'} */ ('info'),
+  // __DEV__ is tree-shaken away in production builds, eliminating the dev-reload
+  // polling loop and its chrome.alarms usage entirely.
+  define: { __DEV__: watch ? 'true' : 'false' },
 };
 
 async function build() {

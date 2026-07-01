@@ -5,7 +5,6 @@
   "description": "AI companion for Google Sheets — voice, vision, and direct sheet interaction",
   "permissions": [
     "activeTab",
-    "alarms",
     "tabs",
     "windows",
     "storage",
