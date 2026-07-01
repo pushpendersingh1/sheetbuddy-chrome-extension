@@ -2,6 +2,7 @@ import type { Message, RelayedMessage, UserQueryPayload } from '../types/message
 import { makeDevReloader } from './dev-reload';
 import { makeSheetPlanHandler } from './sheet-plan';
 import { makeRelay } from './relay';
+import { makeExecutionEngine, MockNarrator } from './execution-engine';
 import { WORKER_URL } from '../config';
 
 // __DEV__ is true only in `npm run watch` (esbuild define).
@@ -100,6 +101,15 @@ const handleUserQuery = makeSheetPlanHandler({
   workerUrl: WORKER_URL,
 });
 
+// MockNarrator is deliberate here, not a placeholder left by mistake — real TTS
+// narration is issue #22's scope. #22 swaps this for offscreen/narrator.ts's
+// TTSNarrator (relayed through the offscreen document, since service workers
+// have no Audio/DOM).
+const executionEngine = makeExecutionEngine({
+  sendMessageToTab: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
+  narrator: MockNarrator,
+});
+
 chrome.runtime.onMessage.addListener(
   (message: Message, sender, sendResponse) => {
     const tabId = sender.tab?.id ?? null;
@@ -129,10 +139,35 @@ chrome.runtime.onMessage.addListener(
         if (tabId !== null) {
           void handleUserQuery(tabId, text).then(outcome => {
             console.log('[SheetBuddy] SheetPlan:', outcome);
+            if (outcome.status === 'plan') {
+              void executionEngine.execute(tabId, outcome).then(result => {
+                console.log('[SheetBuddy] Execution finished:', result);
+              }).catch((err: unknown) => {
+                console.error('[SheetBuddy] Execution engine threw unexpectedly:', err);
+              });
+            }
           });
         } else {
           console.warn('[SheetBuddy] USER_QUERY received with no sender tab — dropping:', text);
         }
+        break;
+      }
+
+      case 'PAUSE_REQUESTED': {
+        executionEngine.requestPause();
+        sendResponse({ ok: true });
+        break;
+      }
+
+      case 'RESUME': {
+        executionEngine.resume();
+        sendResponse({ ok: true });
+        break;
+      }
+
+      case 'ABORT': {
+        executionEngine.abort();
+        sendResponse({ ok: true });
         break;
       }
 
