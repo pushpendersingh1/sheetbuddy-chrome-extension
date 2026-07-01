@@ -29,16 +29,46 @@ export class Transcriber {
     // Acquire mic before opening the WebSocket — if permission is denied, no socket is created
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
+    // Start audio capture immediately so the user can speak right away.
+    // PCM chunks captured before the WebSocket handshake completes (~300–500 ms)
+    // are buffered and flushed once the socket opens, so the first syllables
+    // are not lost.
+    this.audioCtx = new AudioContext({ sampleRate: 16000 });
+    // Offscreen documents have no user gesture — context starts suspended without this.
+    await this.audioCtx.resume();
+    const source = this.audioCtx.createMediaStreamSource(this.stream);
+    const processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+
+    // Holds PCM chunks recorded before the socket opens (capped at ~5 s).
+    const preOpenBuffer: ArrayBufferLike[] = [];
+
+    processor.onaudioprocess = (e: AudioProcessingEvent) => {
+      const float32 = e.inputBuffer.getChannelData(0);
+      const pcm = float32ToPcm16(float32);
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(pcm.buffer);
+      } else if (this.ws?.readyState === WebSocket.CONNECTING && preOpenBuffer.length < 20) {
+        preOpenBuffer.push(pcm.buffer);
+      }
+    };
+
+    source.connect(processor);
+    processor.connect(this.audioCtx.destination);
+
     // speech_model is required for v3; without it the server closes the socket immediately
     const wsUrl = `wss://streaming.assemblyai.com/v3/ws?token=${token}&sample_rate=16000&encoding=pcm_s16le&speech_model=universal-streaming-english`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
       console.log('[SheetBuddy] AssemblyAI WebSocket connected');
+      // Flush audio buffered during handshake
+      for (const chunk of preOpenBuffer) this.ws!.send(chunk);
+      preOpenBuffer.length = 0;
     };
 
     this.ws.onerror = (event) => {
       console.error('[SheetBuddy] AssemblyAI WebSocket error:', event);
+      preOpenBuffer.length = 0;
     };
 
     this.ws.onclose = (event) => {
@@ -76,23 +106,6 @@ export class Transcriber {
         console.warn('[SheetBuddy] Unrecognized AssemblyAI message:', JSON.stringify(data));
       }
     };
-
-    this.audioCtx = new AudioContext({ sampleRate: 16000 });
-    // Offscreen documents have no user gesture — context starts suspended without this.
-    await this.audioCtx.resume();
-    const source = this.audioCtx.createMediaStreamSource(this.stream);
-    const processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
-
-    processor.onaudioprocess = (e: AudioProcessingEvent) => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        const float32 = e.inputBuffer.getChannelData(0);
-        const pcm = float32ToPcm16(float32);
-        this.ws.send(pcm.buffer);
-      }
-    };
-
-    source.connect(processor);
-    processor.connect(this.audioCtx.destination);
   }
 
   stop(): void {
