@@ -241,6 +241,30 @@ describe('InputBar', () => {
     });
   });
 
+  describe('keydown stopPropagation', () => {
+    beforeEach(() => { inputBar.open('both'); });
+
+    it('stops propagation on keydown so host page shortcuts are not triggered', () => {
+      const outsideHandler = vi.fn();
+      document.addEventListener('keydown', outsideHandler);
+      getTextInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+      expect(outsideHandler).not.toHaveBeenCalled();
+      document.removeEventListener('keydown', outsideHandler);
+    });
+
+    it('Escape pressed inside the input closes the bar', () => {
+      getTextInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(getBar().style.display).toBe('none');
+    });
+
+    it('Escape pressed inside the input calls onDismiss', () => {
+      const cb = vi.fn();
+      inputBar.onDismiss = cb;
+      getTextInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(cb).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('toggle', () => {
     it('opens the bar when closed', () => {
       inputBar.toggle();

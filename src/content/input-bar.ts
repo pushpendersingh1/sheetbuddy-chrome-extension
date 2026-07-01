@@ -128,7 +128,12 @@ export class InputBar {
     this.micBtn.addEventListener('click', () => this.toggleRecording());
     this.sendBtn.addEventListener('click', () => this.submit());
     this.textInput.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Keyboard events are composed and bubble out of shadow DOM, reaching
+      // Sheets' global handlers. Stop them here so e.g. Ctrl+A selects text
+      // in the input rather than all cells in the sheet.
+      e.stopPropagation();
       if (e.key === 'Enter') this.submit();
+      if (e.key === 'Escape') { this.onDismiss?.(); this.close(); }
     });
   }
 
