@@ -24,6 +24,10 @@ inputBar.onStartRecording = () => {
 
 inputBar.onStopRecording = () => {
   creature.setState('idle');
+  // Safety unlock: if TRANSCRIPT_FINAL never arrives (e.g. no speech detected),
+  // the field would otherwise stay locked. TRANSCRIPT_FINAL handler also calls
+  // unlockField() — idempotent.
+  inputBar.unlockField();
   chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }).catch((err: unknown) => {
     console.error('[SheetBuddy] Failed to send STOP_RECORDING:', err);
   });
@@ -34,6 +38,7 @@ inputBar.onQuery = (text: string) => {
   chrome.runtime.sendMessage({ type: 'USER_QUERY', payload: { text } satisfies UserQueryPayload }).catch(
     (err: unknown) => {
       console.error('[SheetBuddy] Failed to send USER_QUERY:', err);
+      creature.setState('idle');
     },
   );
 };

@@ -33,6 +33,9 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 let activeTabId: number | null = null;
 
+// Holds the last enriched query (text + screenshot) for issue #20 to consume.
+export let pendingQuery: UserQueryPayload | null = null;
+
 // Singleton promise prevents concurrent createDocument() calls (TOCTOU race).
 let offscreenPromise: Promise<void> | null = null;
 
@@ -126,16 +129,16 @@ chrome.runtime.onMessage.addListener(
         chrome.tabs.captureVisibleTab({ format: 'png' })
           .then(dataUrl => compressScreenshot(dataUrl))
           .then(screenshot => {
-            const enriched: UserQueryPayload = { text, screenshot };
-            console.log('[SheetBuddy] USER_QUERY ready — text:', enriched.text, '| screenshot attached');
-            // Issue #20 will consume enriched payload to call Claude.
+            pendingQuery = { text, screenshot };
+            console.log('[SheetBuddy] USER_QUERY ready — text:', text, '| screenshot attached');
+            // Issue #20 reads pendingQuery to call Claude.
             sendResponse({ ok: true });
           })
           .catch(err => {
             console.error('[SheetBuddy] Screenshot capture failed:', err);
             // Proceed without screenshot so the query is not lost.
-            const fallback: UserQueryPayload = { text };
-            console.log('[SheetBuddy] USER_QUERY (no screenshot):', fallback.text);
+            pendingQuery = { text };
+            console.log('[SheetBuddy] USER_QUERY (no screenshot):', text);
             sendResponse({ ok: true });
           });
         return true;

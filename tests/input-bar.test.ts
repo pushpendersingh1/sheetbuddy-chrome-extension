@@ -8,24 +8,24 @@ class ResizeObserverStub {
 }
 Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserverStub, writable: true });
 
-function getBar(inputBar: InputBar): HTMLElement {
-  const host = document.body.querySelector('#sheetbuddy-input-host') as HTMLElement;
-  return host.shadowRoot!.querySelector('.bar') as HTMLElement;
+function getHost(): HTMLElement {
+  return document.body.querySelector('#sheetbuddy-input-host') as HTMLElement;
 }
 
-function getMicBtn(inputBar: InputBar): HTMLButtonElement {
-  const host = document.body.querySelector('#sheetbuddy-input-host') as HTMLElement;
-  return host.shadowRoot!.querySelector('.mic-btn') as HTMLButtonElement;
+function getBar(): HTMLElement {
+  return getHost().shadowRoot!.querySelector('.bar') as HTMLElement;
 }
 
-function getTextInput(inputBar: InputBar): HTMLInputElement {
-  const host = document.body.querySelector('#sheetbuddy-input-host') as HTMLElement;
-  return host.shadowRoot!.querySelector('.text-input') as HTMLInputElement;
+function getMicBtn(): HTMLButtonElement {
+  return getHost().shadowRoot!.querySelector('.mic-btn') as HTMLButtonElement;
 }
 
-function getSendBtn(inputBar: InputBar): HTMLButtonElement {
-  const host = document.body.querySelector('#sheetbuddy-input-host') as HTMLElement;
-  return host.shadowRoot!.querySelector('.send-btn') as HTMLButtonElement;
+function getTextInput(): HTMLInputElement {
+  return getHost().shadowRoot!.querySelector('.text-input') as HTMLInputElement;
+}
+
+function getSendBtn(): HTMLButtonElement {
+  return getHost().shadowRoot!.querySelector('.send-btn') as HTMLButtonElement;
 }
 
 describe('InputBar', () => {
@@ -48,18 +48,18 @@ describe('InputBar', () => {
     });
 
     it('shadow root contains a .bar element', () => {
-      expect(getBar(inputBar)).not.toBeNull();
+      expect(getBar()).not.toBeNull();
     });
 
     it('bar is hidden on mount', () => {
-      expect(getBar(inputBar).style.display).toBe('none');
+      expect(getBar().style.display).toBe('none');
     });
   });
 
   describe('open', () => {
     it('open("both") makes bar visible', () => {
       inputBar.open('both');
-      expect(getBar(inputBar).style.display).not.toBe('none');
+      expect(getBar().style.display).not.toBe('none');
     });
 
     it('open("both") does not call onStartRecording', () => {
@@ -71,7 +71,7 @@ describe('InputBar', () => {
 
     it('open("voice") makes bar visible', () => {
       inputBar.open('voice');
-      expect(getBar(inputBar).style.display).not.toBe('none');
+      expect(getBar().style.display).not.toBe('none');
     });
 
     it('open("voice") calls onStartRecording', () => {
@@ -83,12 +83,12 @@ describe('InputBar', () => {
 
     it('open("voice") locks the text field', () => {
       inputBar.open('voice');
-      expect(getTextInput(inputBar).readOnly).toBe(true);
+      expect(getTextInput().readOnly).toBe(true);
     });
 
     it('open("text") makes bar visible', () => {
       inputBar.open('text');
-      expect(getBar(inputBar).style.display).not.toBe('none');
+      expect(getBar().style.display).not.toBe('none');
     });
 
     it('open("text") does not call onStartRecording', () => {
@@ -103,14 +103,14 @@ describe('InputBar', () => {
     it('hides the bar', () => {
       inputBar.open('both');
       inputBar.close();
-      expect(getBar(inputBar).style.display).toBe('none');
+      expect(getBar().style.display).toBe('none');
     });
 
     it('clears the text field', () => {
       inputBar.open('both');
-      getTextInput(inputBar).value = 'hello';
+      getTextInput().value = 'hello';
       inputBar.close();
-      expect(getTextInput(inputBar).value).toBe('');
+      expect(getTextInput().value).toBe('');
     });
 
     it('calls onStopRecording when closed during active recording', () => {
@@ -132,7 +132,7 @@ describe('InputBar', () => {
     it('unlocks the text field when closed during recording', () => {
       inputBar.open('voice');
       inputBar.close();
-      expect(getTextInput(inputBar).readOnly).toBe(false);
+      expect(getTextInput().readOnly).toBe(false);
     });
   });
 
@@ -140,20 +140,20 @@ describe('InputBar', () => {
     it('sets the text field value', () => {
       inputBar.open('voice');
       inputBar.setTranscript('hello world');
-      expect(getTextInput(inputBar).value).toBe('hello world');
+      expect(getTextInput().value).toBe('hello world');
     });
   });
 
   describe('lockField / unlockField', () => {
     it('lockField makes text input readonly', () => {
       inputBar.lockField();
-      expect(getTextInput(inputBar).readOnly).toBe(true);
+      expect(getTextInput().readOnly).toBe(true);
     });
 
     it('unlockField removes readonly', () => {
       inputBar.lockField();
       inputBar.unlockField();
-      expect(getTextInput(inputBar).readOnly).toBe(false);
+      expect(getTextInput().readOnly).toBe(false);
     });
   });
 
@@ -163,27 +163,27 @@ describe('InputBar', () => {
     it('first click starts recording and calls onStartRecording', () => {
       const cb = vi.fn();
       inputBar.onStartRecording = cb;
-      getMicBtn(inputBar).click();
+      getMicBtn().click();
       expect(cb).toHaveBeenCalledOnce();
     });
 
     it('first click locks the text field', () => {
-      getMicBtn(inputBar).click();
-      expect(getTextInput(inputBar).readOnly).toBe(true);
+      getMicBtn().click();
+      expect(getTextInput().readOnly).toBe(true);
     });
 
     it('second click stops recording and calls onStopRecording', () => {
       const cb = vi.fn();
       inputBar.onStopRecording = cb;
-      getMicBtn(inputBar).click();
-      getMicBtn(inputBar).click();
+      getMicBtn().click();
+      getMicBtn().click();
       expect(cb).toHaveBeenCalledOnce();
     });
 
-    it('second click unlocks the text field', () => {
-      getMicBtn(inputBar).click();
-      getMicBtn(inputBar).click();
-      expect(getTextInput(inputBar).readOnly).toBe(false);
+    it('second click does not unlock the field — unlock is delegated to onStopRecording / TRANSCRIPT_FINAL', () => {
+      getMicBtn().click(); // lock
+      getMicBtn().click(); // stop — field stays locked until TRANSCRIPT_FINAL arrives
+      expect(getTextInput().readOnly).toBe(true);
     });
   });
 
@@ -193,23 +193,23 @@ describe('InputBar', () => {
     it('calls onQuery with trimmed text field value', () => {
       const cb = vi.fn();
       inputBar.onQuery = cb;
-      getTextInput(inputBar).value = '  sum column A  ';
-      getSendBtn(inputBar).click();
+      getTextInput().value = '  sum column A  ';
+      getSendBtn().click();
       expect(cb).toHaveBeenCalledWith('sum column A');
     });
 
     it('closes the bar after sending', () => {
       inputBar.onQuery = vi.fn();
-      getTextInput(inputBar).value = 'hello';
-      getSendBtn(inputBar).click();
-      expect(getBar(inputBar).style.display).toBe('none');
+      getTextInput().value = 'hello';
+      getSendBtn().click();
+      expect(getBar().style.display).toBe('none');
     });
 
     it('does not call onQuery when text field is empty', () => {
       const cb = vi.fn();
       inputBar.onQuery = cb;
-      getTextInput(inputBar).value = '';
-      getSendBtn(inputBar).click();
+      getTextInput().value = '';
+      getSendBtn().click();
       expect(cb).not.toHaveBeenCalled();
     });
   });
@@ -220,23 +220,23 @@ describe('InputBar', () => {
     it('pressing Enter calls onQuery with text field value', () => {
       const cb = vi.fn();
       inputBar.onQuery = cb;
-      getTextInput(inputBar).value = 'count rows';
-      getTextInput(inputBar).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      getTextInput().value = 'count rows';
+      getTextInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       expect(cb).toHaveBeenCalledWith('count rows');
     });
 
     it('pressing Enter closes the bar', () => {
       inputBar.onQuery = vi.fn();
-      getTextInput(inputBar).value = 'count rows';
-      getTextInput(inputBar).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      expect(getBar(inputBar).style.display).toBe('none');
+      getTextInput().value = 'count rows';
+      getTextInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(getBar().style.display).toBe('none');
     });
 
     it('pressing Enter on empty field does not call onQuery', () => {
       const cb = vi.fn();
       inputBar.onQuery = cb;
-      getTextInput(inputBar).value = '';
-      getTextInput(inputBar).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      getTextInput().value = '';
+      getTextInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       expect(cb).not.toHaveBeenCalled();
     });
   });
@@ -245,7 +245,7 @@ describe('InputBar', () => {
     it('closes the bar when Escape is pressed while open', () => {
       inputBar.open('both');
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      expect(getBar(inputBar).style.display).toBe('none');
+      expect(getBar().style.display).toBe('none');
     });
 
     it('calls onDismiss when Escape is pressed while open', () => {

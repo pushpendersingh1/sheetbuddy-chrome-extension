@@ -147,6 +147,7 @@ export class InputBar {
 
   close(): void {
     if (this.isRecording) this.stopRecording();
+    this.unlockField(); // always reset to editable when bar is closed
     this.bar.style.display = 'none';
     this.textInput.value = '';
     this.isOpen = false;
@@ -176,7 +177,6 @@ export class InputBar {
     this.isRecording = false;
     this.micBtn.classList.remove('mic-btn--recording');
     this.micBtn.textContent = '🎙 Tap to speak';
-    this.unlockField();
     this.onStopRecording?.();
   }
 
@@ -214,6 +214,8 @@ export class InputBar {
   }
 
   private observeLayout(): void {
+    // Sheets shrinks its grid container when the sidebar opens; observe that
+    // element so the bar stays anchored right of the grid without polling.
     const GRID_SELECTORS = [
       '#waffle-grid-container',
       '#waffle-scrollable-wrapper',
@@ -224,7 +226,7 @@ export class InputBar {
       ?? document.body;
 
     const GAP = 16;
-    const BAR_BOTTOM = 56 + 56 + GAP; // creature bottom + creature height + gap
+    const BAR_BOTTOM = 56 + 56 + GAP; // creature bottom (56) + creature height (56) + gap
     let rafId = 0;
 
     const reposition = () => {
@@ -234,6 +236,7 @@ export class InputBar {
       this.host.style.bottom = `${BAR_BOTTOM}px`;
     };
 
+    // Run once immediately so the initial position is layout-accurate.
     reposition();
 
     new ResizeObserver(() => {
