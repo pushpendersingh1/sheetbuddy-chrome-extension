@@ -1,12 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { InputBar } from '../src/content/input-bar';
+import { installResizeObserverStub } from './support/resize-observer-stub';
 
-class ResizeObserverStub {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserverStub, writable: true });
+installResizeObserverStub();
 
 function getHost(): HTMLElement {
   return document.body.querySelector('#sheetbuddy-input-host') as HTMLElement;

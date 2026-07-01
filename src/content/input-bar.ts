@@ -1,3 +1,5 @@
+import { observeGridAnchor } from './grid-anchor';
+
 const STYLES = `
   :host {
     position: fixed;
@@ -152,7 +154,13 @@ export class InputBar {
 
   mount(): void {
     document.body.appendChild(this.host);
-    this.observeLayout();
+    const GAP = 16;
+    const BAR_BOTTOM = 56 + 56 + GAP; // creature bottom (56) + creature height (56) + gap
+    observeGridAnchor(rect => {
+      const spaceOnRight = window.innerWidth - rect.right;
+      this.host.style.right = `${spaceOnRight + GAP}px`;
+      this.host.style.bottom = `${BAR_BOTTOM}px`;
+    });
     this.attachDismissListeners();
   }
 
@@ -270,35 +278,4 @@ export class InputBar {
     });
   }
 
-  private observeLayout(): void {
-    // Sheets shrinks its grid container when the sidebar opens; observe that
-    // element so the bar stays anchored right of the grid without polling.
-    const GRID_SELECTORS = [
-      '#waffle-grid-container',
-      '#waffle-scrollable-wrapper',
-      '.grid-scrollable-wrapper',
-    ];
-    const anchor =
-      GRID_SELECTORS.map(s => document.querySelector<HTMLElement>(s)).find(Boolean)
-      ?? document.body;
-
-    const GAP = 16;
-    const BAR_BOTTOM = 56 + 56 + GAP; // creature bottom (56) + creature height (56) + gap
-    let rafId = 0;
-
-    const reposition = () => {
-      rafId = 0;
-      const spaceOnRight = window.innerWidth - anchor.getBoundingClientRect().right;
-      this.host.style.right = `${spaceOnRight + GAP}px`;
-      this.host.style.bottom = `${BAR_BOTTOM}px`;
-    };
-
-    // Run once immediately so the initial position is layout-accurate.
-    reposition();
-
-    new ResizeObserver(() => {
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(reposition);
-    }).observe(anchor);
-  }
 }
