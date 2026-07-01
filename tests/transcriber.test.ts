@@ -42,6 +42,7 @@ function makeStreamStub() {
   const tracks = [makeTrackStub()];
   return {
     getTracks: vi.fn(() => tracks),
+    getAudioTracks: vi.fn(() => tracks),
     _tracks: tracks,
   };
 }
@@ -160,10 +161,11 @@ describe('Transcriber', () => {
   });
 
   describe('stop()', () => {
-    it('sends terminate_session over the WebSocket', () => {
+    it('closes the WebSocket without sending any frame (v3 closes socket directly)', () => {
       const ws = WebSocketStub.lastInstance;
       transcriber.stop();
-      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ terminate_session: true }));
+      expect(ws.send).not.toHaveBeenCalled();
+      expect(ws.close).toHaveBeenCalled();
     });
 
     it('closes the WebSocket', () => {

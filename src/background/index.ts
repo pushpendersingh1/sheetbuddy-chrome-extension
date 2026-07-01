@@ -1,4 +1,21 @@
 import type { Message, UserQueryPayload } from '../types/messages';
+import { makeDevReloader } from './dev-reload';
+
+// __DEV__ is true only in `npm run watch` (esbuild define).
+// Unpacked extensions have no alarm minimum period, so 2 s is honoured in dev.
+if (__DEV__) {
+  const DEV_RELOAD_PERIOD_MINUTES = 1 / 30; // ~2 s
+  const devCheckReload = makeDevReloader({
+    fetchFn: globalThis.fetch.bind(globalThis),
+    reload: () => chrome.runtime.reload(),
+    url: 'http://127.0.0.1:35729/',
+  });
+  chrome.alarms.create('_dev_reload', { periodInMinutes: DEV_RELOAD_PERIOD_MINUTES });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === '_dev_reload') void devCheckReload();
+  });
+  void devCheckReload();
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[SheetBuddy] Extension installed');

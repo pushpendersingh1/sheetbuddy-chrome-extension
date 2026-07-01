@@ -176,12 +176,14 @@ describe('InputBar', () => {
       const cb = vi.fn();
       inputBar.onStopRecording = cb;
       getMicBtn().click();
+      inputBar.setMicReady(); // simulates START_RECORDING response — enables the Stop button
       getMicBtn().click();
       expect(cb).toHaveBeenCalledOnce();
     });
 
     it('second click does not unlock the field — unlock is delegated to onStopRecording / TRANSCRIPT_FINAL', () => {
-      getMicBtn().click(); // lock
+      getMicBtn().click(); // lock — button goes to preparing (disabled)
+      inputBar.setMicReady(); // mic live — button becomes Stop (enabled)
       getMicBtn().click(); // stop — field stays locked until TRANSCRIPT_FINAL arrives
       expect(getTextInput().readOnly).toBe(true);
     });

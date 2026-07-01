@@ -2,6 +2,7 @@
 // @ts-check
 const esbuild = require('esbuild');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const zlib = require('zlib');
 
@@ -67,16 +68,54 @@ function generateIcons() {
 
 // --- Static file copy ---
 function copyStatics() {
-  fs.copyFileSync(
-    path.join(__dirname, 'manifest.json'),
-    path.join(distDir, 'manifest.json'),
-  );
+  // Inject "alarms" only in watch/dev builds — the dev-reload polling loop needs
+  // it, but production installs should not declare an unused permission.
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
+  if (watch && !manifest.permissions.includes('alarms')) {
+    manifest.permissions.splice(1, 0, 'alarms'); // keep alphabetical order
+  }
+  fs.writeFileSync(path.join(distDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
   for (const [src, dest] of [
     ['src/offscreen/offscreen.html', 'offscreen.html'],
     ['src/devpanel/devpanel.html', 'devpanel.html'],
   ]) {
     fs.copyFileSync(path.join(__dirname, src), path.join(distDir, dest));
   }
+}
+
+// --- Dev-reload server (watch mode only) ---
+// The background service worker polls this endpoint every ~2 s.
+// When the build version changes it calls chrome.runtime.reload() — same
+// effect as the Reload button on chrome://extensions.
+const DEV_RELOAD_PORT = 35729;
+
+function startDevReloadServer() {
+  let buildVersion = Date.now();
+  let debounce = null;
+
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store',
+    });
+    res.end(JSON.stringify({ v: buildVersion }));
+  });
+
+  server.listen(DEV_RELOAD_PORT, '127.0.0.1', () => {
+    console.log(`[SheetBuddy] Dev-reload server → http://127.0.0.1:${DEV_RELOAD_PORT}`);
+  });
+
+  // Returns a bump function. Debounced 50 ms so all 5 esbuild onEnd calls
+  // (one per entry) collapse into a single version increment.
+  return function bump() {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      buildVersion = Date.now();
+      console.log(`[SheetBuddy] Rebuilt (v=${buildVersion}) — extension will reload`);
+    }, 50);
+  };
 }
 
 // --- esbuild entries ---
@@ -95,6 +134,9 @@ const sharedOptions = {
   format: /** @type {'iife'} */ ('iife'),
   sourcemap: true,
   logLevel: /** @type {'info'} */ ('info'),
+  // __DEV__ is tree-shaken away in production builds, eliminating the dev-reload
+  // polling loop and its chrome.alarms usage entirely.
+  define: { __DEV__: watch ? 'true' : 'false' },
 };
 
 async function build() {
@@ -103,9 +145,19 @@ async function build() {
   copyStatics();
 
   if (watch) {
+    const bump = startDevReloadServer();
+    const reloadPlugin = {
+      name: 'dev-reload-notify',
+      setup(build) { build.onEnd(() => bump()); },
+    };
+
     const contexts = await Promise.all(
       entries.map(e =>
-        esbuild.context({ ...sharedOptions, entryPoints: [{ in: e.in, out: e.out }] }),
+        esbuild.context({
+          ...sharedOptions,
+          plugins: [reloadPlugin],
+          entryPoints: [{ in: e.in, out: e.out }],
+        }),
       ),
     );
     await Promise.all(contexts.map(ctx => ctx.watch()));
