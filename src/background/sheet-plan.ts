@@ -8,7 +8,7 @@ export interface SheetPlanDeps {
 }
 
 export type SheetPlanOutcome =
-  | { status: 'plan'; plan: SheetPlan }
+  | { status: 'plan'; plan: SheetPlan; sheetGid: string; spreadsheetId: string }
   | { status: 'advisor'; plan: SheetPlan }
   | { status: 'error'; error: string };
 
@@ -38,11 +38,19 @@ function needsScreenshot(text: string): boolean {
   return VISUAL_REASONING_CUES.some(cue => lower.includes(cue));
 }
 
+// parseSheetPlan is deliberately domContext-agnostic — it only judges whether
+// the worker's JSON is shaped like a plan. Sheet identity isn't its concern,
+// so its 'plan' variant omits sheetGid/spreadsheetId; run() attaches those
+// where domContext is actually in scope.
+type ParsedPlan =
+  | { status: 'plan'; plan: SheetPlan }
+  | { status: 'advisor'; plan: SheetPlan };
+
 // Only the worker's own advisor fallback ({totalSteps:0, summary, steps:[]}) is
 // guaranteed valid JSON — valid-but-wrong-shaped responses (missing/malformed
 // steps) still need to collapse to advisor mode here.
-function parseSheetPlan(json: unknown): SheetPlanOutcome {
-  const advisorFallback = (summary: unknown): SheetPlanOutcome => ({
+function parseSheetPlan(json: unknown): ParsedPlan {
+  const advisorFallback = (summary: unknown): ParsedPlan => ({
     status: 'advisor',
     plan: {
       totalSteps: 0,
@@ -129,7 +137,13 @@ export function makeSheetPlanHandler(deps: SheetPlanDeps) {
         return { status: 'error', error: body?.error ?? `Worker responded with ${res.status}` };
       }
 
-      return parseSheetPlan(await res.json());
+      const parsed = parseSheetPlan(await res.json());
+      // Only 'plan' outcomes are ever executed against the DOM, so only they need
+      // to carry which sheet the plan was built for — lets #21's executor guard
+      // against the user switching sheets while the query was processing.
+      return parsed.status === 'plan'
+        ? { ...parsed, sheetGid: domContext.sheetGid, spreadsheetId: domContext.spreadsheetId }
+        : parsed;
     } catch (err) {
       return { status: 'error', error: errMsg(err) };
     } finally {
