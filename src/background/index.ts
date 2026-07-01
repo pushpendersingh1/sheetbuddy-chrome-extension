@@ -126,22 +126,24 @@ chrome.runtime.onMessage.addListener(
 
       case 'USER_QUERY': {
         const { text } = (message.payload ?? {}) as UserQueryPayload;
+        // Acknowledge immediately — the content script only needs to know the
+        // message was received. Holding the channel open until screenshot
+        // capture finishes causes "message channel closed before response"
+        // errors when the MV3 service worker is suspended mid-operation.
+        sendResponse({ ok: true });
         chrome.tabs.captureVisibleTab({ format: 'png' })
           .then(dataUrl => compressScreenshot(dataUrl))
           .then(screenshot => {
             pendingQuery = { text, screenshot };
             console.log('[SheetBuddy] USER_QUERY ready — text:', text, '| screenshot attached');
-            // Issue #20 reads pendingQuery to call Claude.
-            sendResponse({ ok: true });
           })
           .catch(err => {
             console.error('[SheetBuddy] Screenshot capture failed:', err);
             // Proceed without screenshot so the query is not lost.
             pendingQuery = { text };
             console.log('[SheetBuddy] USER_QUERY (no screenshot):', text);
-            sendResponse({ ok: true });
           });
-        return true;
+        break;
       }
 
       case 'TRANSCRIPT_PARTIAL':
