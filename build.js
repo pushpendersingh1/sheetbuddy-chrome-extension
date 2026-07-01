@@ -2,6 +2,7 @@
 // @ts-check
 const esbuild = require('esbuild');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const zlib = require('zlib');
 
@@ -79,6 +80,40 @@ function copyStatics() {
   }
 }
 
+// --- Dev-reload server (watch mode only) ---
+// The background service worker polls this endpoint every ~2 s.
+// When the build version changes it calls chrome.runtime.reload() — same
+// effect as the Reload button on chrome://extensions.
+const DEV_RELOAD_PORT = 35729;
+
+function startDevReloadServer() {
+  let buildVersion = Date.now();
+  let debounce = null;
+
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store',
+    });
+    res.end(JSON.stringify({ v: buildVersion }));
+  });
+
+  server.listen(DEV_RELOAD_PORT, '127.0.0.1', () => {
+    console.log(`[SheetBuddy] Dev-reload server → http://127.0.0.1:${DEV_RELOAD_PORT}`);
+  });
+
+  // Returns a bump function. Debounced 50 ms so all 5 esbuild onEnd calls
+  // (one per entry) collapse into a single version increment.
+  return function bump() {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      buildVersion = Date.now();
+      console.log(`[SheetBuddy] Rebuilt (v=${buildVersion}) — extension will reload`);
+    }, 50);
+  };
+}
+
 // --- esbuild entries ---
 const entries = [
   { in: 'src/background/index.ts', out: 'background' },
@@ -103,9 +138,19 @@ async function build() {
   copyStatics();
 
   if (watch) {
+    const bump = startDevReloadServer();
+    const reloadPlugin = {
+      name: 'dev-reload-notify',
+      setup(build) { build.onEnd(() => bump()); },
+    };
+
     const contexts = await Promise.all(
       entries.map(e =>
-        esbuild.context({ ...sharedOptions, entryPoints: [{ in: e.in, out: e.out }] }),
+        esbuild.context({
+          ...sharedOptions,
+          plugins: [reloadPlugin],
+          entryPoints: [{ in: e.in, out: e.out }],
+        }),
       ),
     );
     await Promise.all(contexts.map(ctx => ctx.watch()));
