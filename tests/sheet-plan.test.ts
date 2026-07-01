@@ -68,25 +68,40 @@ describe('makeSheetPlanHandler', () => {
     expect(sendMessageToTab).toHaveBeenCalledWith(TAB_ID, { type: 'TASK_COMPLETE' });
   });
 
-  it('sends text, domContext, and screenshot to /chat', async () => {
+  it('sends text and domContext to /chat, plus a screenshot for a visual-reasoning query', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse({ totalSteps: 0, summary: 'ok', steps: [] }),
     ) as unknown as typeof fetch;
     const handleUserQuery = makeSheetPlanHandler(makeDeps({ fetchFn }));
 
-    await handleUserQuery(TAB_ID, 'sum column B into C2');
+    await handleUserQuery(TAB_ID, 'what color is the header row');
 
     expect(fetchFn).toHaveBeenCalledWith(
       `${WORKER_URL}/chat`,
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
-          text: 'sum column B into C2',
+          text: 'what color is the header row',
           domContext: SAMPLE_CONTEXT,
           screenshot: 'data:image/png;base64,abc',
         }),
       }),
     );
+  });
+
+  it('does not capture a screenshot for a query with no visual-reasoning cues', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({ totalSteps: 0, summary: 'ok', steps: [] }),
+    ) as unknown as typeof fetch;
+    const captureVisibleTab = vi.fn().mockResolvedValue('data:image/png;base64,abc');
+    const handleUserQuery = makeSheetPlanHandler(makeDeps({ fetchFn, captureVisibleTab }));
+
+    await handleUserQuery(TAB_ID, 'sum column B into C2');
+
+    expect(captureVisibleTab).not.toHaveBeenCalled();
+    const call = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse((call[1] as RequestInit).body as string) as { screenshot?: string };
+    expect(body.screenshot).toBeUndefined();
   });
 
   it("passes through the worker's own advisor fallback", async () => {
@@ -181,15 +196,16 @@ describe('makeSheetPlanHandler', () => {
     if (outcome.status === 'plan') expect(outcome.plan.steps[0].args).toEqual({});
   });
 
-  it('proceeds without a screenshot when captureVisibleTab fails', async () => {
+  it('proceeds without a screenshot when captureVisibleTab fails on a visual-reasoning query', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse({ totalSteps: 0, summary: 'ok', steps: [] }),
     ) as unknown as typeof fetch;
     const captureVisibleTab = vi.fn().mockRejectedValue(new Error('capture failed'));
     const handleUserQuery = makeSheetPlanHandler(makeDeps({ fetchFn, captureVisibleTab }));
 
-    const outcome = await handleUserQuery(TAB_ID, 'do something');
+    const outcome = await handleUserQuery(TAB_ID, 'what does this chart look like');
 
+    expect(captureVisibleTab).toHaveBeenCalled();
     expect(outcome.status).toBe('advisor');
     const call = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     const body = JSON.parse((call[1] as RequestInit).body as string) as { screenshot?: string };

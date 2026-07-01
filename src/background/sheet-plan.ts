@@ -24,6 +24,20 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+// Screenshots are supplementary context for visual questions (chart layout,
+// formatting colours, UI element locations) — not for formula/reference
+// questions, which should rely on structured DOM context alone.
+const VISUAL_REASONING_CUES = [
+  'color', 'colour', 'chart', 'graph', 'format', 'formatting', 'look', 'looks',
+  'appearance', 'highlight', 'highlighted', 'layout', 'icon', 'image', 'picture',
+  'style', 'bold', 'italic', 'font', 'border', 'shape',
+];
+
+function needsScreenshot(text: string): boolean {
+  const lower = text.toLowerCase();
+  return VISUAL_REASONING_CUES.some(cue => lower.includes(cue));
+}
+
 // Only the worker's own advisor fallback ({totalSteps:0, summary, steps:[]}) is
 // guaranteed valid JSON — valid-but-wrong-shaped responses (missing/malformed
 // steps) still need to collapse to advisor mode here.
@@ -94,8 +108,11 @@ export function makeSheetPlanHandler(deps: SheetPlanDeps) {
       return { status: 'error', error: `Could not read spreadsheet context: ${errMsg(err)}` };
     }
 
-    // Non-fatal: proceed without a screenshot rather than lose the query.
-    const screenshot = await captureVisibleTab().catch(() => undefined);
+    // Only captured for visual-reasoning queries; non-fatal on failure either
+    // way — proceed without a screenshot rather than lose the query.
+    const screenshot = needsScreenshot(text)
+      ? await captureVisibleTab().catch(() => undefined)
+      : undefined;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);

@@ -158,6 +158,8 @@ chrome.runtime.onMessage.addListener(
           void handleUserQuery(tabId, text).then(outcome => {
             console.log('[SheetBuddy] SheetPlan:', outcome);
           });
+        } else {
+          console.warn('[SheetBuddy] USER_QUERY received with no sender tab — dropping:', text);
         }
         break;
       }

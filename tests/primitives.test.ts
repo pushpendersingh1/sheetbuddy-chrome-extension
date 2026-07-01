@@ -121,7 +121,8 @@ function setNameBox(value: string) {
 }
 
 function setFormulaBar(value: string) {
-  document.querySelector('#t-formula-bar-input-container .cell-input')!.textContent = value;
+  const el = document.querySelector('#t-formula-bar-input-container .cell-input');
+  if (el) el.textContent = value;
 }
 
 // Simulates Sheets asynchronously catching up to a hash-driven selection change:
