@@ -1,7 +1,7 @@
 // Isolated-world content script primitives.
 // All DOM reads/writes here run in Chrome's isolated world — same DOM, separate JS env.
 
-import type { DOMContext } from '../types/messages';
+import type { CellRect, DOMContext } from '../types/messages';
 
 export type OS = 'mac' | 'pc' | 'chromeos';
 
@@ -121,6 +121,37 @@ export function readActiveCell(): string {
   // Name Box is an <input id="t-name-box"> — read .value, not textContent
   const el = document.querySelector<HTMLInputElement>('#t-name-box');
   return el?.value?.trim() ?? '';
+}
+
+// Google Sheets renders its grid on a single <canvas> — there is no per-cell DOM
+// element to read a position from. The only real DOM signal for where a cell sits
+// on screen is the selection-highlight overlay Sheets renders around whatever is
+// currently selected: 4 border divs (top/right/bottom/left), present only once a
+// selection has actually landed. Some border divs in the DOM pool are reused/hidden
+// (zero-size) at any given time — filter those out before unioning.
+function unionBorderRects(selector: string): CellRect | null {
+  const rects = Array.from(document.querySelectorAll(selector))
+    .map((el) => el.getBoundingClientRect())
+    .filter((r) => r.width > 0 || r.height > 0);
+  if (rects.length === 0) return null;
+
+  const left = Math.min(...rects.map((r) => r.left));
+  const top = Math.min(...rects.map((r) => r.top));
+  const right = Math.max(...rects.map((r) => r.right));
+  const bottom = Math.max(...rects.map((r) => r.bottom));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+// The SheetBuddy cursor's position source for single-cell steps (selectCell,
+// navigateToSheet) — see unionBorderRects.
+export function readActiveCellRect(): CellRect | null {
+  return unionBorderRects('.range-border.active-cell-border');
+}
+
+// The SheetBuddy cursor's position source for range steps (selectRange) — the
+// range's full bounding box, distinct from readActiveCellRect's single-cell rect.
+export function readSelectionRect(): CellRect | null {
+  return unionBorderRects('.range-border.selection-border');
 }
 
 export function readCellError(): string {

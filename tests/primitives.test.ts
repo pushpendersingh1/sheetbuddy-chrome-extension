@@ -5,6 +5,8 @@ import {
   safeKeyTarget,
   readFormulaBar,
   readActiveCell,
+  readActiveCellRect,
+  readSelectionRect,
   readSheetGid,
   readColumnHeaders,
   collectDOMContext,
@@ -333,6 +335,73 @@ describe('readActiveCell', () => {
 
   it('returns empty string when name box is absent', () => {
     expect(readActiveCell()).toBe('');
+  });
+});
+
+// --- readActiveCellRect / readSelectionRect ---
+//
+// Google Sheets renders its grid on a single <canvas> — there's no per-cell DOM
+// element to read a position from. The only real DOM signal is the selection
+// overlay: border divs Sheets renders around whatever is currently selected.
+// These fixtures mirror what was found via live DOM inspection of a real sheet.
+
+function borderDiv(cls: string, rect: { x: number; y: number; width: number; height: number }): HTMLElement {
+  const el = document.createElement('div');
+  el.className = cls;
+  vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+    x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+    left: rect.x, top: rect.y, right: rect.x + rect.width, bottom: rect.y + rect.height,
+    toJSON() { return this; },
+  } as DOMRect);
+  document.body.appendChild(el);
+  return el;
+}
+
+describe('readActiveCellRect', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('unions the 4 active-cell-border edge divs into the cell\'s rect', () => {
+    borderDiv('range-border active-cell-border', { x: 45, y: 165, width: 102, height: 2 }); // top
+    borderDiv('range-border active-cell-border', { x: 45, y: 185, width: 102, height: 2 }); // bottom
+    borderDiv('range-border active-cell-border', { x: 145, y: 165, width: 2, height: 22 }); // right
+    borderDiv('range-border active-cell-border', { x: 45, y: 165, width: 2, height: 22 }); // left
+
+    expect(readActiveCellRect()).toEqual({ x: 45, y: 165, width: 102, height: 22 });
+  });
+
+  it('ignores zero-size border divs mixed into the DOM pool', () => {
+    borderDiv('range-border active-cell-border', { x: 0, y: 0, width: 0, height: 0 });
+    borderDiv('range-border active-cell-border', { x: 45, y: 165, width: 102, height: 2 });
+    borderDiv('range-border active-cell-border', { x: 45, y: 185, width: 102, height: 2 });
+    borderDiv('range-border active-cell-border', { x: 145, y: 165, width: 2, height: 22 });
+    borderDiv('range-border active-cell-border', { x: 45, y: 165, width: 2, height: 22 });
+
+    expect(readActiveCellRect()).toEqual({ x: 45, y: 165, width: 102, height: 22 });
+  });
+
+  it('returns null when no selection has landed yet', () => {
+    expect(readActiveCellRect()).toBeNull();
+  });
+});
+
+describe('readSelectionRect', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('unions the selection-border edges into the full range\'s rect (A1:B3)', () => {
+    borderDiv('range-border selection-border', { x: 45, y: 165, width: 202.5, height: 1 }); // top
+    borderDiv('range-border selection-border', { x: 45, y: 228, width: 202.5, height: 1 }); // bottom
+    borderDiv('range-border selection-border', { x: 247, y: 165, width: 1, height: 63.5 }); // right
+    borderDiv('range-border selection-border', { x: 45, y: 165, width: 1, height: 63.5 }); // left
+
+    expect(readSelectionRect()).toEqual({ x: 45, y: 165, width: 203, height: 64 });
+  });
+
+  it('returns null when no range selection has landed yet', () => {
+    expect(readSelectionRect()).toBeNull();
   });
 });
 

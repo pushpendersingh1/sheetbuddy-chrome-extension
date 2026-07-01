@@ -1,12 +1,16 @@
-import type { Message, RunPrimitivePayload, TranscriptPayload, OpenInputBarPayload, UserQueryPayload, PauseAtStepPayload } from '../types/messages';
+import type { Message, RunPrimitivePayload, TranscriptPayload, OpenInputBarPayload, UserQueryPayload, PauseAtStepPayload, CursorMoveToPayload } from '../types/messages';
 import { handlePrimitive } from './router';
 import { SheetBuddyCreature } from './creature';
+import { SheetBuddyCursor } from './cursor';
 import { InputBar } from './input-bar';
 
 console.log('[SheetBuddy] Content script loaded on', window.location.href);
 
 const creature = new SheetBuddyCreature();
 creature.mount();
+
+const cursor = new SheetBuddyCursor();
+cursor.mount();
 
 const inputBar = new InputBar();
 inputBar.mount();
@@ -137,12 +141,19 @@ chrome.runtime.onMessage.addListener(
       return;
     }
 
-    if (message.type === 'TASK_STARTED') creature.setState('active');
-    else if (message.type === 'TASK_COMPLETE') creature.setState('idle');
-    else if (message.type === 'PAUSE_AT_STEP') {
+    if (message.type === 'TASK_STARTED') {
+      creature.setState('active');
+      cursor.show();
+    } else if (message.type === 'TASK_COMPLETE') {
+      creature.setState('idle');
+      cursor.hide();
+    } else if (message.type === 'PAUSE_AT_STEP') {
       const { currentStep, totalSteps } = (message.payload ?? {}) as PauseAtStepPayload;
       console.log(`[SheetBuddy] Paused at step ${currentStep} of ${totalSteps}`);
       creature.setState('paused');
+    } else if (message.type === 'CURSOR_MOVE_TO') {
+      const { rect } = (message.payload ?? {}) as CursorMoveToPayload;
+      if (rect) cursor.moveTo(rect);
     }
 
     console.log('[SheetBuddy] Content received:', message.type);

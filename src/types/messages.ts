@@ -15,6 +15,7 @@ export type MessageType =
   | 'SPEAK'
   | 'START_RECORDING'
   | 'STOP_RECORDING'
+  | 'CURSOR_MOVE_TO'
   | 'DEBUG';
 
 export interface UserQueryPayload {
@@ -72,6 +73,20 @@ export interface DOMContext {
   sheetName: string;
   columnHeaders: string[];
   availableSheets: string[];
+}
+
+// A target cell/range's on-screen position, in viewport coordinates — matches
+// DOMRect's shape but plain (structured-cloneable across the RUN_PRIMITIVE /
+// CURSOR_MOVE_TO message boundary; DOMRect itself is not).
+export interface CellRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface CursorMoveToPayload {
+  rect: CellRect;
 }
 
 export interface SheetStep {

@@ -1,8 +1,9 @@
 import type { Message, RelayedMessage, UserQueryPayload } from '../types/messages';
+import type { Narrator } from '../offscreen/narrator';
 import { makeDevReloader } from './dev-reload';
 import { makeSheetPlanHandler } from './sheet-plan';
 import { makeRelay } from './relay';
-import { makeExecutionEngine, MockNarrator } from './execution-engine';
+import { makeExecutionEngine } from './execution-engine';
 import { WORKER_URL } from '../config';
 
 // __DEV__ is true only in `npm run watch` (esbuild define).
@@ -101,13 +102,26 @@ const handleUserQuery = makeSheetPlanHandler({
   workerUrl: WORKER_URL,
 });
 
-// MockNarrator is deliberate here, not a placeholder left by mistake — real TTS
-// narration is issue #22's scope. #22 swaps this for offscreen/narrator.ts's
-// TTSNarrator (relayed through the offscreen document, since service workers
-// have no Audio/DOM).
+// TTSNarrator (offscreen/narrator.ts) uses Audio/DOM and lives in the offscreen
+// document — it can't be constructed directly in this service worker. Wrap the
+// existing SPEAK relay into a Narrator instead.
+function makeRelayedNarrator(relay: typeof relayToOffscreen): Narrator {
+  return {
+    speak(text: string): Promise<void> {
+      return new Promise((resolve, reject) => {
+        relay({ type: 'SPEAK', payload: { text } }, (response) => {
+          const r = response as { ok: boolean; error?: string } | undefined;
+          if (r?.ok) resolve();
+          else reject(new Error(r?.error ?? 'SPEAK relay failed'));
+        });
+      });
+    },
+  };
+}
+
 const executionEngine = makeExecutionEngine({
   sendMessageToTab: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
-  narrator: MockNarrator,
+  narrator: makeRelayedNarrator(relayToOffscreen),
 });
 
 chrome.runtime.onMessage.addListener(
@@ -155,6 +169,9 @@ chrome.runtime.onMessage.addListener(
 
       case 'PAUSE_REQUESTED': {
         executionEngine.requestPause();
+        // Fire-and-forget: pause must register immediately regardless of whether
+        // the offscreen doc actually has anything playing to stop.
+        relayToOffscreen({ type: 'STOP_NARRATION' }, () => {});
         sendResponse({ ok: true });
         break;
       }

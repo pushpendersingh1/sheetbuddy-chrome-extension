@@ -2,6 +2,8 @@ import type { PrimitiveResult } from '../types/messages';
 import {
   readFormulaBar,
   readActiveCell,
+  readActiveCellRect,
+  readSelectionRect,
   readCellError,
   readSpreadsheetId,
   readSheetGid,
@@ -26,6 +28,8 @@ type PrimitiveFn = (...args: unknown[]) => unknown | Promise<unknown>;
 const PRIMITIVES: Record<string, PrimitiveFn> = {
   readFormulaBar,
   readActiveCell,
+  readActiveCellRect,
+  readSelectionRect,
   readCellError,
   readSpreadsheetId: (url?: unknown) => readSpreadsheetId(url as string | undefined),
   readSheetGid: (url?: unknown) => readSheetGid(url as string | undefined),
