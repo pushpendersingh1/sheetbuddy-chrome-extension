@@ -1,5 +1,7 @@
 import type { Message, UserQueryPayload } from '../types/messages';
 import { makeDevReloader } from './dev-reload';
+import { makeSheetPlanHandler } from './sheet-plan';
+import { WORKER_URL } from '../config';
 
 // __DEV__ is true only in `npm run watch` (esbuild define).
 // Unpacked extensions have no alarm minimum period, so 2 s is honoured in dev.
@@ -49,9 +51,6 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 let activeTabId: number | null = null;
-
-// Holds the last enriched query (text + screenshot) for issue #20 to consume.
-export let pendingQuery: UserQueryPayload | null = null;
 
 // Singleton promise prevents concurrent createDocument() calls (TOCTOU race).
 let offscreenPromise: Promise<void> | null = null;
@@ -110,6 +109,13 @@ async function compressScreenshot(dataUrl: string): Promise<string> {
   return `data:image/jpeg;base64,${btoa(binary)}`;
 }
 
+const handleUserQuery = makeSheetPlanHandler({
+  fetchFn: globalThis.fetch.bind(globalThis),
+  captureVisibleTab: () => chrome.tabs.captureVisibleTab({ format: 'png' }).then(compressScreenshot),
+  sendMessageToTab: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
+  workerUrl: WORKER_URL,
+});
+
 chrome.runtime.onMessage.addListener(
   (message: Message, sender, sendResponse) => {
     const tabId = sender.tab?.id ?? null;
@@ -144,22 +150,17 @@ chrome.runtime.onMessage.addListener(
       case 'USER_QUERY': {
         const { text } = (message.payload ?? {}) as UserQueryPayload;
         // Acknowledge immediately — the content script only needs to know the
-        // message was received. Holding the channel open until screenshot
-        // capture finishes causes "message channel closed before response"
+        // message was received. Holding the channel open until the SheetPlan
+        // pipeline finishes causes "message channel closed before response"
         // errors when the MV3 service worker is suspended mid-operation.
         sendResponse({ ok: true });
-        chrome.tabs.captureVisibleTab({ format: 'png' })
-          .then(dataUrl => compressScreenshot(dataUrl))
-          .then(screenshot => {
-            pendingQuery = { text, screenshot };
-            console.log('[SheetBuddy] USER_QUERY ready — text:', text, '| screenshot attached');
-          })
-          .catch(err => {
-            console.error('[SheetBuddy] Screenshot capture failed:', err);
-            // Proceed without screenshot so the query is not lost.
-            pendingQuery = { text };
-            console.log('[SheetBuddy] USER_QUERY (no screenshot):', text);
+        if (tabId !== null) {
+          void handleUserQuery(tabId, text).then(outcome => {
+            console.log('[SheetBuddy] SheetPlan:', outcome);
           });
+        } else {
+          console.warn('[SheetBuddy] USER_QUERY received with no sender tab — dropping:', text);
+        }
         break;
       }
 

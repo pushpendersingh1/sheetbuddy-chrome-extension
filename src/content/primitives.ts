@@ -1,6 +1,8 @@
 // Isolated-world content script primitives.
 // All DOM reads/writes here run in Chrome's isolated world — same DOM, separate JS env.
 
+import type { DOMContext } from '../types/messages';
+
 export type OS = 'mac' | 'pc' | 'chromeos';
 
 export interface ShortcutDef {
@@ -143,19 +145,89 @@ export function activeSheetName(): string {
 
 // ─── Navigation primitives ───────────────────────────────────────────────────
 
+export function readSheetGid(url = window.location.href): string {
+  const u = new URL(url);
+  return u.searchParams.get('gid') ?? new URLSearchParams(u.hash.slice(1)).get('gid') ?? '0';
+}
+
 export function selectCell(ref: string): void {
   // URL hash navigation: changes only the hash — no full page reload.
   // Verified: window.location.hash change triggers Sheets to select the given range.
-  const url = new URL(window.location.href);
-  const gid =
-    url.searchParams.get('gid') ??
-    new URLSearchParams(window.location.hash.slice(1)).get('gid') ??
-    '0';
+  const gid = readSheetGid();
   window.location.hash = `gid=${gid}&range=${ref}`;
 }
 
 export async function selectRange(start: string, end: string): Promise<void> {
   selectCell(`${start}:${end}`);
+}
+
+const MAX_HEADER_COLUMNS = 50;
+const HEADER_SCAN_SETTLE_TIMEOUT_MS = 2000;
+
+function columnLetter(index: number): string {
+  let n = index + 1;
+  let letters = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letters = String.fromCharCode(65 + rem) + letters;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letters;
+}
+
+async function waitForCondition(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise<void>((r) => setTimeout(r, 50));
+  }
+  return false;
+}
+
+// Reads row 1 across columns, stopping at the first blank cell (standard header
+// convention) or after MAX_HEADER_COLUMNS (runaway guard). Assumes the header row
+// is row 1 — Google Sheets grid is canvas-rendered, so this is the only way to read
+// values outside the currently-selected cell (a temporary measure until the Sheets
+// API replaces DOM scanning). Each hop selects the header cell then polls the name
+// box until Sheets' asynchronous selection catches up, since reading the formula
+// bar immediately risks stale content from the previously selected cell. Restores
+// the user's original selection when done.
+export async function readColumnHeaders(): Promise<string[]> {
+  const originalRef = readActiveCell();
+  const headers: string[] = [];
+
+  for (let i = 0; i < MAX_HEADER_COLUMNS; i++) {
+    const ref = `${columnLetter(i)}1`;
+    selectCell(ref);
+    const settled = await waitForCondition(() => readActiveCell() === ref, HEADER_SCAN_SETTLE_TIMEOUT_MS);
+    if (!settled) break;
+    const value = readFormulaBar().trim();
+    if (!value) break;
+    headers.push(value);
+  }
+
+  if (originalRef) selectCell(originalRef);
+  return headers;
+}
+
+// Bundles all DOMContext fields in one call so background needs a single
+// RUN_PRIMITIVE round-trip instead of one per field. activeCell/formulaBar are
+// read before readColumnHeaders() runs — it temporarily navigates away to scan
+// row 1 and restores the original selection afterward, but doesn't wait for that
+// restore to settle before resolving, so reading them after would risk a stale value.
+export async function collectDOMContext(): Promise<DOMContext> {
+  const activeCell = readActiveCell();
+  const formulaBar = readFormulaBar();
+  const columnHeaders = await readColumnHeaders();
+  return {
+    activeCell,
+    formulaBar,
+    spreadsheetId: readSpreadsheetId() ?? '',
+    sheetGid: readSheetGid(),
+    sheetName: activeSheetName(),
+    columnHeaders,
+    availableSheets: listSheets(),
+  };
 }
 
 export function navigateToSheet(name: string): void {
