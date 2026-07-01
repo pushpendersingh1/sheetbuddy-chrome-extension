@@ -56,6 +56,12 @@ export interface Message<T = unknown> {
   payload?: T;
 }
 
+// chrome.runtime.sendMessage broadcasts to every extension context, so the
+// offscreen document must distinguish messages background deliberately relayed
+// to it from that broadcast noise. RelayedMessage is only ever constructed by
+// background/relay.ts's relayToOffscreen — no other call site may stamp this.
+export type RelayedMessage = Message & { _relayed: true };
+
 // Mirrors worker/src/utils.ts's DOMContext — duplicated because the worker is a
 // separate package with its own build, not because the shape is expected to diverge.
 export interface DOMContext {
