@@ -289,6 +289,26 @@ describe('makeExecutionEngine', () => {
     expect(messagesOfType(sendMessageToTab, 'TASK_COMPLETE')).toHaveLength(1);
   });
 
+  it('stops between steps when aborted mid-run without ever pausing first', async () => {
+    // selectCell's DOM effect lands 20ms late, so at t=10ms the engine is still
+    // polling confirmStep for step 1 — abort() fires while nothing is paused.
+    const { sendMessageToTab, dispatched } = makeFakeTab({ delayMs: { selectCell: 20 } });
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, pollIntervalMs: 2, confirmTimeoutMs: 200 }));
+    const outcome = planOutcome([
+      step({ stepNumber: 1, primitive: 'selectCell', args: { ref: 'B7' } }),
+      step({ stepNumber: 2, primitive: 'typeText', args: { text: '=SUM(A1:A5)' } }),
+      step({ stepNumber: 3, primitive: 'commitCell' }),
+    ]);
+
+    const executePromise = engine.execute(TAB_ID, outcome);
+    setTimeout(() => engine.abort(), 10);
+    const result = await executePromise;
+
+    expect(result).toEqual({ status: 'aborted' });
+    expect(dispatched).toEqual(['selectCell']);
+    expect(messagesOfType(sendMessageToTab, 'TASK_COMPLETE')).toHaveLength(1);
+  });
+
   it('aborts before executing anything when the active sheet no longer matches the outcome', async () => {
     const { sendMessageToTab, dispatched } = makeFakeTab({ sheetGid: '999999', spreadsheetId: 'abc' });
     const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
