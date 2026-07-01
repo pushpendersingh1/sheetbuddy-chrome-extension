@@ -140,8 +140,20 @@ export class InputBar {
     this.isOpen = true;
     if (mode === 'voice') {
       this.startRecording();
+      this.textInput.focus();
     } else if (mode === 'text') {
       this.textInput.focus();
+    } else {
+      // 'both': show bar with text field focused so user can type immediately
+      this.textInput.focus();
+    }
+  }
+
+  toggle(): void {
+    if (this.isOpen) {
+      this.close();
+    } else {
+      this.open('both');
     }
   }
 

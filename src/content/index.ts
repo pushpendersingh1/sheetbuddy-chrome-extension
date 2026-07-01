@@ -11,8 +11,8 @@ creature.mount();
 const inputBar = new InputBar();
 inputBar.mount();
 
-// Wire creature click → open bar in 'both' mode (voice button + text field, nothing auto-started)
-creature.onClick = () => inputBar.open('both');
+// Wire creature click → toggle bar (open if closed, close if open)
+creature.onClick = () => inputBar.toggle();
 
 // Wire input bar callbacks → chrome messaging + creature state
 inputBar.onStartRecording = () => {

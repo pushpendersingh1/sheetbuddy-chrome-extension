@@ -63,6 +63,9 @@ export class Transcriber {
         return;
       }
 
+      // v3: Begin is a session-init acknowledgement, nothing to do
+      if (data.type === 'Begin') return;
+
       // v2 fallback
       if (data.message_type === 'PartialTranscript') {
         this.onTranscript(data.text ?? '', false);

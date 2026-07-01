@@ -241,6 +241,26 @@ describe('InputBar', () => {
     });
   });
 
+  describe('toggle', () => {
+    it('opens the bar when closed', () => {
+      inputBar.toggle();
+      expect(getBar().style.display).not.toBe('none');
+    });
+
+    it('closes the bar when open', () => {
+      inputBar.open('both');
+      inputBar.toggle();
+      expect(getBar().style.display).toBe('none');
+    });
+
+    it('re-opens after close', () => {
+      inputBar.toggle(); // open
+      inputBar.toggle(); // close
+      inputBar.toggle(); // open again
+      expect(getBar().style.display).not.toBe('none');
+    });
+  });
+
   describe('Escape key dismiss', () => {
     it('closes the bar when Escape is pressed while open', () => {
       inputBar.open('both');
