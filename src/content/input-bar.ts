@@ -88,6 +88,9 @@ export class InputBar {
   onStopRecording: (() => void) | null = null;
   onQuery: ((text: string) => void) | null = null;
   onDismiss: (() => void) | null = null;
+  // Elements that should not trigger dismiss on mousedown (e.g. the creature host
+  // that has its own click→toggle handler — mousedown would race with click).
+  dismissExclusions: Element[] = [];
 
   constructor() {
     this.host = document.createElement('div');
@@ -218,7 +221,9 @@ export class InputBar {
     document.addEventListener('mousedown', (e: MouseEvent) => {
       if (!this.isOpen) return;
       const path = e.composedPath();
-      if (!path.includes(this.host)) {
+      const inBar = path.includes(this.host);
+      const inExcluded = this.dismissExclusions.some(el => path.includes(el));
+      if (!inBar && !inExcluded) {
         this.onDismiss?.();
         this.close();
       }

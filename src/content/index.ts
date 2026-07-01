@@ -11,6 +11,11 @@ creature.mount();
 const inputBar = new InputBar();
 inputBar.mount();
 
+// Exclude creature host from dismiss so mousedown-on-creature doesn't race with
+// the toggle click: without this, mousedown closes the bar then click re-opens it.
+const creatureHost = document.querySelector('#sheetbuddy-creature-host');
+if (creatureHost) inputBar.dismissExclusions.push(creatureHost);
+
 // Wire creature click → toggle bar (open if closed, close if open)
 creature.onClick = () => inputBar.toggle();
 
