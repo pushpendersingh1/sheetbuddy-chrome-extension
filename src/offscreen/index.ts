@@ -1,13 +1,18 @@
-import type { Message, SpeakPayload, TranscriptPayload } from '../types/messages';
+import type { Message, SpeakPayload } from '../types/messages';
 import { WORKER_URL } from '../config';
 import { TTSNarrator } from './narrator';
 import { Transcriber } from './transcriber';
 import { AssemblyAIAdapter } from './assemblyai-adapter';
+import { makeTranscriptPipeline } from './pipeline';
 
 console.log('[SheetBuddy] Offscreen document ready');
 
 const narrator = new TTSNarrator(WORKER_URL);
-let transcriber: Transcriber | null = null;
+
+const transcriptPipeline = makeTranscriptPipeline({
+  createTranscriber: (onTranscript, onDebug) => new Transcriber(new AssemblyAIAdapter(WORKER_URL), onTranscript, onDebug),
+  sendMessage: (message) => chrome.runtime.sendMessage(message),
+});
 
 chrome.runtime.onMessage.addListener((message: Message & { _relayed?: boolean }, _sender, sendResponse) => {
   // chrome.runtime.sendMessage broadcasts to ALL extension contexts.
@@ -36,42 +41,18 @@ chrome.runtime.onMessage.addListener((message: Message & { _relayed?: boolean },
     }
 
     case 'STOP_NARRATION': {
-      // narrator.stop() deferred to issue #21 — no audio ref stored on TTSNarrator yet
+      // narrator.stop() deferred to issue #22 — no audio ref stored on TTSNarrator yet
       sendResponse({ ok: true });
       break;
     }
 
     case 'START_RECORDING': {
-      if (transcriber) {
-        sendResponse({ ok: false, error: 'Already recording' });
-        break;
-      }
-      transcriber = new Transcriber(
-        new AssemblyAIAdapter(WORKER_URL),
-        (text, isFinal) => {
-          const payload: TranscriptPayload = { text, isFinal };
-          chrome.runtime.sendMessage({
-            type: isFinal ? 'TRANSCRIPT_FINAL' : 'TRANSCRIPT_PARTIAL',
-            payload,
-          });
-        },
-        (msg) => {
-          chrome.runtime.sendMessage({ type: 'DEBUG', payload: { msg } });
-        },
-      );
-      transcriber.start()
-        .then(() => sendResponse({ ok: true }))
-        .catch((err: unknown) => {
-          console.error('[SheetBuddy] Recording start error:', err);
-          transcriber = null;
-          sendResponse({ ok: false, error: String(err) });
-        });
+      transcriptPipeline.startRecording().then(sendResponse);
       return true;
     }
 
     case 'STOP_RECORDING': {
-      transcriber?.stop();
-      transcriber = null;
+      transcriptPipeline.stopRecording();
       sendResponse({ ok: true });
       break;
     }
