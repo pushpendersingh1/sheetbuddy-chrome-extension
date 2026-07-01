@@ -13,7 +13,8 @@
     "identity"
   ],
   "host_permissions": [
-    "https://docs.google.com/spreadsheets/*"
+    "https://docs.google.com/spreadsheets/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
