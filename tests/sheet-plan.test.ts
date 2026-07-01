@@ -64,8 +64,31 @@ describe('makeSheetPlanHandler', () => {
 
     const outcome = await handleUserQuery(TAB_ID, 'sum column B into C2');
 
-    expect(outcome).toEqual({ status: 'plan', plan: validPlan });
+    expect(outcome).toEqual({
+      status: 'plan',
+      plan: validPlan,
+      sheetGid: SAMPLE_CONTEXT.sheetGid,
+      spreadsheetId: SAMPLE_CONTEXT.spreadsheetId,
+    });
     expect(sendMessageToTab).toHaveBeenCalledWith(TAB_ID, { type: 'TASK_COMPLETE' });
+  });
+
+  it("carries the collected sheet's gid and spreadsheetId, not a hardcoded value", async () => {
+    const otherSheetContext: DOMContext = { ...SAMPLE_CONTEXT, sheetGid: '482910335', spreadsheetId: 'xyz-789' };
+    const validPlan = { totalSteps: 0, summary: 'ok', steps: [{
+      stepNumber: 1, description: 'Select C2', narration: 'Selecting C2', primitive: 'selectCell', args: { ref: 'C2' },
+    }] };
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(validPlan)) as unknown as typeof fetch;
+    const sendMessageToTab = vi.fn(async (_tabId: number, message: Message) => {
+      if (message.type === 'RUN_PRIMITIVE') return { ok: true, result: otherSheetContext };
+      if (message.type === 'TASK_COMPLETE') return { ok: true };
+      throw new Error(`Unexpected message in test: ${message.type}`);
+    });
+    const handleUserQuery = makeSheetPlanHandler(makeDeps({ fetchFn, sendMessageToTab }));
+
+    const outcome = await handleUserQuery(TAB_ID, 'sum column B into C2');
+
+    expect(outcome).toMatchObject({ sheetGid: '482910335', spreadsheetId: 'xyz-789' });
   });
 
   it('sends text and domContext to /chat, plus a screenshot for a visual-reasoning query', async () => {
