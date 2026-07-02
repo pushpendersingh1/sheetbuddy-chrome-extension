@@ -69,6 +69,7 @@ describe('makeSheetPlanHandler', () => {
       plan: validPlan,
       sheetGid: SAMPLE_CONTEXT.sheetGid,
       spreadsheetId: SAMPLE_CONTEXT.spreadsheetId,
+      sheetName: SAMPLE_CONTEXT.sheetName,
     });
     expect(sendMessageToTab).not.toHaveBeenCalledWith(TAB_ID, { type: 'TASK_COMPLETE' });
   });

@@ -8,7 +8,10 @@ export interface SheetPlanDeps {
 }
 
 export type SheetPlanOutcome =
-  | { status: 'plan'; plan: SheetPlan; sheetGid: string; spreadsheetId: string }
+  // sheetName is the sheet the plan was built against — the Sheets API write
+  // fallback's backstop for resolving its target range when the DOM (including
+  // the live activeSheetName read) is too broken to ask directly.
+  | { status: 'plan'; plan: SheetPlan; sheetGid: string; spreadsheetId: string; sheetName: string }
   | { status: 'advisor'; plan: SheetPlan }
   | { status: 'error'; error: string };
 
@@ -142,7 +145,7 @@ export function makeSheetPlanHandler(deps: SheetPlanDeps) {
       // to carry which sheet the plan was built for — lets #21's executor guard
       // against the user switching sheets while the query was processing.
       return parsed.status === 'plan'
-        ? { ...parsed, sheetGid: domContext.sheetGid, spreadsheetId: domContext.spreadsheetId }
+        ? { ...parsed, sheetGid: domContext.sheetGid, spreadsheetId: domContext.spreadsheetId, sheetName: domContext.sheetName }
         : parsed;
     } catch (err) {
       return { status: 'error', error: errMsg(err) };
