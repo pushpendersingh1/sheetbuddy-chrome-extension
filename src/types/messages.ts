@@ -87,6 +87,7 @@ export interface CellRect {
 
 export interface CursorMoveToPayload {
   rect: CellRect;
+  label: string;
 }
 
 export interface SheetStep {

@@ -8,27 +8,50 @@ const STYLES = `
     position: fixed;
     left: 0;
     top: 0;
-    width: 0;
-    height: 0;
     z-index: 2147483647;
     pointer-events: none;
     display: block;
     opacity: 0;
-    transition: left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease, opacity 0.2s ease;
+    transition: left 0.3s ease, top 0.3s ease, opacity 0.2s ease;
   }
 
-  .cursor {
-    box-sizing: border-box;
-    width: 100%;
-    height: 100%;
-    border: 2px solid #10B981;
+  .wrap {
+    position: relative;
+  }
+
+  .arrow {
+    display: block;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+  }
+
+  .label {
+    position: absolute;
+    left: 18px;
+    top: 16px;
+    max-width: 220px;
+    padding: 4px 8px;
+    background: #10B981;
+    color: #fff;
+    font: 500 12px/1.3 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     border-radius: 4px;
-    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   }
 `;
 
+// A tilted arrow pointer with its hotspot at the tip (top-left of the glyph) —
+// the same visual language as collaborative cursors (Figma, Google Docs):
+// a colored arrow plus a name-tag label, so it reads as "someone is pointing
+// here" rather than a selection highlight.
+const ARROW_SVG = `<svg class="arrow" width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+  <path d="M1 1 L1 15.5 L5 12 L7.8 18 L10.4 16.8 L7.6 10.8 L13 10.8 Z" fill="#10B981" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>
+</svg>`;
+
 export class SheetBuddyCursor {
   private host: HTMLElement;
+  private labelEl: HTMLElement;
   private visible = false;
 
   constructor() {
@@ -40,20 +63,28 @@ export class SheetBuddyCursor {
     style.textContent = STYLES;
     shadow.appendChild(style);
 
-    const el = document.createElement('div');
-    el.className = 'cursor';
-    shadow.appendChild(el);
+    const wrap = document.createElement('div');
+    wrap.className = 'wrap';
+    wrap.innerHTML = ARROW_SVG;
+    shadow.appendChild(wrap);
+
+    this.labelEl = document.createElement('div');
+    this.labelEl.className = 'label';
+    wrap.appendChild(this.labelEl);
   }
 
   mount(): void {
     document.body.appendChild(this.host);
   }
 
-  moveTo(rect: CellRect): void {
-    this.host.style.left = `${rect.x}px`;
-    this.host.style.top = `${rect.y}px`;
-    this.host.style.width = `${rect.width}px`;
-    this.host.style.height = `${rect.height}px`;
+  // Positions the arrow's tip at the center of the target cell/range and shows
+  // a short label describing the step next to it.
+  moveTo(rect: CellRect, label: string): void {
+    const x = rect.x + rect.width / 2;
+    const y = rect.y + rect.height / 2;
+    this.host.style.left = `${x}px`;
+    this.host.style.top = `${y}px`;
+    this.labelEl.textContent = label;
   }
 
   show(): void {

@@ -235,7 +235,7 @@ describe('makeExecutionEngine', () => {
     // The cursor still ends up in the right place once the DOM (and thus the
     // confirmation poll) catches up.
     expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([
-      { type: 'CURSOR_MOVE_TO', payload: { rect } },
+      { type: 'CURSOR_MOVE_TO', payload: { rect, label: 'step 1' } },
     ]);
   });
 
@@ -405,7 +405,7 @@ describe('makeExecutionEngine', () => {
     await engine.execute(TAB_ID, outcome);
 
     expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([
-      { type: 'CURSOR_MOVE_TO', payload: { rect } },
+      { type: 'CURSOR_MOVE_TO', payload: { rect, label: 'step 1' } },
     ]);
   });
 
@@ -421,7 +421,7 @@ describe('makeExecutionEngine', () => {
     await engine.execute(TAB_ID, outcome);
 
     expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([
-      { type: 'CURSOR_MOVE_TO', payload: { rect } },
+      { type: 'CURSOR_MOVE_TO', payload: { rect, label: 'step 1' } },
     ]);
   });
 

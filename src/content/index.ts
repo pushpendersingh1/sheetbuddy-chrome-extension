@@ -152,8 +152,8 @@ chrome.runtime.onMessage.addListener(
       console.log(`[SheetBuddy] Paused at step ${currentStep} of ${totalSteps}`);
       creature.setState('paused');
     } else if (message.type === 'CURSOR_MOVE_TO') {
-      const { rect } = (message.payload ?? {}) as CursorMoveToPayload;
-      if (rect) cursor.moveTo(rect);
+      const { rect, label } = (message.payload ?? {}) as CursorMoveToPayload;
+      if (rect) cursor.moveTo(rect, label);
     }
 
     console.log('[SheetBuddy] Content received:', message.type);

@@ -195,7 +195,7 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
 
     await sendMessageToTab(tabId, {
       type: 'CURSOR_MOVE_TO',
-      payload: { rect: result.result as CellRect },
+      payload: { rect: result.result as CellRect, label: step.description },
     }).catch(() => {});
   }
 
