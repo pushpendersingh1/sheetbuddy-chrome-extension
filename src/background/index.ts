@@ -167,6 +167,13 @@ chrome.runtime.onMessage.addListener(
               narrator.speak(outcome.plan.summary).catch((err: unknown) => {
                 console.error('[SheetBuddy] Narrator failed for advisor response:', err);
               });
+            } else if (outcome.status === 'error') {
+              // Same silent-drop problem as advisor, but for failures (context read
+              // failed, worker error, network/timeout) — narrate so the user knows
+              // *something* went wrong instead of the creature just going idle.
+              narrator.speak(`Sorry, I ran into a problem: ${outcome.error}`).catch((err: unknown) => {
+                console.error('[SheetBuddy] Narrator failed for error response:', err);
+              });
             }
           });
         } else {
