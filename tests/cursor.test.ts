@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SheetBuddyCursor } from '../src/content/cursor';
 
+// jsdom doesn't do real layout, so offsetWidth/offsetHeight are always 0
+// unless mocked — these tests stub them per-case to simulate the label's
+// rendered size when checking whether it overflows the viewport.
+function stubLabelSize(label: HTMLElement, size: { width: number; height: number }): void {
+  Object.defineProperty(label, 'offsetWidth', { configurable: true, value: size.width });
+  Object.defineProperty(label, 'offsetHeight', { configurable: true, value: size.height });
+}
+
 describe('SheetBuddyCursor', () => {
   let cursor: SheetBuddyCursor;
 
@@ -121,6 +129,86 @@ describe('SheetBuddyCursor', () => {
       const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
       const label = host.shadowRoot!.querySelector('.label') as HTMLElement;
       expect(label.textContent).toBe('');
+    });
+
+    it('does not flip when the label fits within the viewport', () => {
+      const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
+      const label = host.shadowRoot!.querySelector('.label') as HTMLElement;
+      stubLabelSize(label, { width: 50, height: 20 });
+      cursor.moveTo({ x: 100, y: 100, width: 0, height: 0 });
+
+      cursor.showLabel('Selecting B7');
+
+      expect(label.classList.contains('flip-x')).toBe(false);
+      expect(label.classList.contains('flip-y')).toBe(false);
+    });
+
+    it('flips horizontally when the label would overflow the right edge (e.g. a cell near the right of the sheet)', () => {
+      const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
+      const label = host.shadowRoot!.querySelector('.label') as HTMLElement;
+      stubLabelSize(label, { width: 200, height: 20 });
+      // arrow tip at x=900: 900 + 18 (offset) + 200 (label width) = 1118 > jsdom's default innerWidth (1024)
+      cursor.moveTo({ x: 892, y: 100, width: 16, height: 8 });
+
+      cursor.showLabel('Navigating to cell Z1000 now.');
+
+      expect(label.classList.contains('flip-x')).toBe(true);
+      expect(label.classList.contains('flip-y')).toBe(false);
+    });
+
+    it('flips vertically when the label would overflow the bottom edge', () => {
+      const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
+      const label = host.shadowRoot!.querySelector('.label') as HTMLElement;
+      stubLabelSize(label, { width: 50, height: 100 });
+      // arrow tip at y=700: 700 + 16 (offset) + 100 (label height) = 816 > jsdom's default innerHeight (768)
+      cursor.moveTo({ x: 100, y: 692, width: 16, height: 8 });
+
+      cursor.showLabel('Committing the value now.');
+
+      expect(label.classList.contains('flip-x')).toBe(false);
+      expect(label.classList.contains('flip-y')).toBe(true);
+    });
+
+    it('flips both ways when the label would overflow the bottom-right corner', () => {
+      const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
+      const label = host.shadowRoot!.querySelector('.label') as HTMLElement;
+      stubLabelSize(label, { width: 200, height: 100 });
+      cursor.moveTo({ x: 892, y: 692, width: 16, height: 8 });
+
+      cursor.showLabel('Selecting the final cell in the bottom-right corner.');
+
+      expect(label.classList.contains('flip-x')).toBe(true);
+      expect(label.classList.contains('flip-y')).toBe(true);
+    });
+
+    it('clears a previous flip once a new position no longer overflows', () => {
+      const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
+      const label = host.shadowRoot!.querySelector('.label') as HTMLElement;
+      stubLabelSize(label, { width: 200, height: 20 });
+      cursor.moveTo({ x: 892, y: 100, width: 16, height: 8 });
+      cursor.showLabel('Near the edge');
+      expect(label.classList.contains('flip-x')).toBe(true);
+
+      cursor.moveTo({ x: 100, y: 100, width: 16, height: 8 });
+      cursor.showLabel('Back in the middle');
+      expect(label.classList.contains('flip-x')).toBe(false);
+    });
+
+    it('re-checks overflow using the target position, not a stale mid-transition DOM read, when a label is shown right after moveTo()', () => {
+      // Regression test: showLabel() used to read this.labelEl.getBoundingClientRect()
+      // synchronously right after moveTo() set a new (CSS-transitioning) host
+      // position. That raced the transition and reported the arrow's PREVIOUS
+      // location, so a label near the edge was measured as fitting when it
+      // didn't. updateLabelPosition() must use the known target x/y instead.
+      const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
+      const label = host.shadowRoot!.querySelector('.label') as HTMLElement;
+      stubLabelSize(label, { width: 200, height: 20 });
+
+      cursor.showAtHome({ x: 100, y: 100 }); // starts near the left edge
+      cursor.moveTo({ x: 892, y: 100, width: 16, height: 8 }); // then jumps to the right edge
+      cursor.showLabel('Now typing into the cell.'); // narration shown immediately after landing
+
+      expect(label.classList.contains('flip-x')).toBe(true);
     });
   });
 });

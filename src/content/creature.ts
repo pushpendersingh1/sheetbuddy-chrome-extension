@@ -62,17 +62,24 @@ const STYLES = `
   }
 
   /* Anchored above-left of the creature so it stays on-screen regardless of
-     how narrow the viewport gets near the bottom-right corner. */
+     how narrow the viewport gets near the bottom-right corner. width:max-content
+     (not just max-width) matters here specifically: :host has an explicit
+     width:56px, and this box has no left offset set, so its shrink-to-fit
+     width would otherwise be computed against that 56px containing block and
+     collapse to a near-minimum width — max-content escapes that and sizes to
+     the actual content, up to max-width. */
   .bubble {
     position: absolute;
     right: 64px;
     bottom: 8px;
-    max-width: 260px;
+    width: max-content;
+    max-width: 280px;
     padding: 6px 10px;
     background: #10B981;
     color: #fff;
     font: 500 12px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     border-radius: 8px;
+    word-wrap: break-word;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
     opacity: 0;
     transition: opacity 0.2s ease;

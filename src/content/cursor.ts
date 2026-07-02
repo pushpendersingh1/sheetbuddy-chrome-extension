@@ -28,15 +28,22 @@ const STYLES = `
     position: absolute;
     left: 18px;
     top: 16px;
-    max-width: 220px;
+    /* width:max-content (not just max-width) so the box sizes to its own
+       content instead of shrink-to-fit against the :host's containing block
+       (which has no explicit width here, but nested shadow-DOM positioning
+       can still collapse this without it — see creature.ts's .bubble for the
+       version where the host's own explicit width made this collapse for
+       real). white-space:normal (not nowrap) so long narration sentences
+       wrap across lines instead of truncating with an ellipsis. */
+    width: max-content;
+    max-width: 260px;
     padding: 4px 8px;
     background: #10B981;
     color: #fff;
     font: 500 12px/1.3 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     border-radius: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    word-wrap: break-word;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
     opacity: 0;
     transition: opacity 0.2s ease;
@@ -44,6 +51,19 @@ const STYLES = `
 
   .label:not(:empty) {
     opacity: 1;
+  }
+
+  /* Flips applied in JS (see updateLabelPosition) once the label's rendered
+     position would overflow the viewport — e.g. a target cell near the
+     right or bottom edge of the screen. */
+  .label.flip-x {
+    left: auto;
+    right: 18px;
+  }
+
+  .label.flip-y {
+    top: auto;
+    bottom: 16px;
   }
 `;
 
@@ -60,6 +80,12 @@ export class SheetBuddyCursor {
   private labelEl: HTMLElement;
   private visible = false;
   private landed = false;
+  // The arrow's current/target x,y — tracked in JS rather than re-derived
+  // via getBoundingClientRect() because the host's position transitions
+  // over 0.3s; reading layout synchronously right after setting a new
+  // left/top would race that transition (see updateLabelPosition()).
+  private x = 0;
+  private y = 0;
 
   constructor() {
     this.host = document.createElement('div');
@@ -90,6 +116,8 @@ export class SheetBuddyCursor {
   // teleporting in already at the target.
   showAtHome(point: { x: number; y: number }): void {
     this.landed = false;
+    this.x = point.x;
+    this.y = point.y;
     this.host.style.transition = 'none';
     this.host.style.left = `${point.x}px`;
     this.host.style.top = `${point.y}px`;
@@ -101,18 +129,48 @@ export class SheetBuddyCursor {
   // Animates the arrow's tip to the center of the target cell/range.
   moveTo(rect: CellRect): void {
     this.landed = true;
-    const x = rect.x + rect.width / 2;
-    const y = rect.y + rect.height / 2;
-    this.host.style.left = `${x}px`;
-    this.host.style.top = `${y}px`;
+    this.x = rect.x + rect.width / 2;
+    this.y = rect.y + rect.height / 2;
+    this.host.style.left = `${this.x}px`;
+    this.host.style.top = `${this.y}px`;
+    this.updateLabelPosition();
   }
 
   showLabel(text: string): void {
     this.labelEl.textContent = text;
+    this.updateLabelPosition();
   }
 
   hideLabel(): void {
     this.labelEl.textContent = '';
+  }
+
+  // Flips the label to the opposite side of the arrow when its default
+  // position (right + below the tip) would render it off-screen — e.g. a
+  // target cell near the right or bottom edge. Mirrors Clicky's own
+  // repositionPanelNearCursor(), which does the same edge-flip for its
+  // cursor-following response overlay.
+  //
+  // Computed arithmetically from the arrow's known target x/y and the
+  // label's own offsetWidth/offsetHeight rather than
+  // this.labelEl.getBoundingClientRect() — the host's left/top transitions
+  // over 0.3s, and moveTo() followed immediately by showLabel() (the normal
+  // sequence: cursor lands on a cell, then that step's narration shows)
+  // reads the label's rect mid-transition, before the browser has committed
+  // the new host position. That raced read reports the arrow's *previous*
+  // location, so a label near the right/bottom edge was measured as if it
+  // were still safely inside the viewport. The label's own dimensions
+  // aren't affected by the host's position transition, so offsetWidth/
+  // offsetHeight are safe to read synchronously.
+  private updateLabelPosition(): void {
+    this.labelEl.classList.remove('flip-x', 'flip-y');
+    if (!this.labelEl.textContent) return;
+    const width = this.labelEl.offsetWidth;
+    const height = this.labelEl.offsetHeight;
+    const LABEL_LEFT = 18;
+    const LABEL_TOP = 16;
+    if (this.x + LABEL_LEFT + width > window.innerWidth) this.labelEl.classList.add('flip-x');
+    if (this.y + LABEL_TOP + height > window.innerHeight) this.labelEl.classList.add('flip-y');
   }
 
   show(): void {
@@ -138,3 +196,4 @@ export class SheetBuddyCursor {
     return this.landed;
   }
 }
+
