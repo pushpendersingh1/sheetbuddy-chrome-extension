@@ -28,13 +28,14 @@ function plan(steps: SheetStep[]): SheetPlan {
 
 function planOutcome(
   steps: SheetStep[],
-  overrides: { sheetGid?: string; spreadsheetId?: string } = {},
+  overrides: { sheetGid?: string; spreadsheetId?: string; sheetName?: string } = {},
 ): Extract<SheetPlanOutcome, { status: 'plan' }> {
   return {
     status: 'plan',
     plan: plan(steps),
     sheetGid: overrides.sheetGid ?? '0',
     spreadsheetId: overrides.spreadsheetId ?? 'abc',
+    sheetName: overrides.sheetName ?? 'Sheet1',
   };
 }
 
@@ -607,6 +608,23 @@ describe('makeExecutionEngine', () => {
       expect(result).toEqual({ status: 'completed' });
       expect(writeCell).not.toHaveBeenCalled();
       expect(dispatched).toEqual(['navigateToSheet', 'selectCell']);
+    });
+
+    it('falls back to the sheet the plan was built against when the DOM is too broken to read the sheet name', async () => {
+      const writeCell = vi.fn().mockResolvedValue(undefined);
+      const { sendMessageToTab: baseFake } = makeFakeTab({ fail: ['typeText'] });
+      const sendMessageToTab = vi.fn(async (tabId: number, message: Message) => {
+        if (message.type === 'RUN_PRIMITIVE' && (message.payload as { name: string }).name === 'activeSheetName') {
+          return { ok: false, error: 'sheet tab strip not found' };
+        }
+        return baseFake(tabId, message);
+      });
+      const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, sheetsApi: { writeCell } }));
+
+      const result = await engine.execute(TAB_ID, planOutcome(writePlan().plan.steps, { sheetName: 'Q3 Budget' }));
+
+      expect(result).toEqual({ status: 'completed' });
+      expect(writeCell).toHaveBeenCalledWith('abc', "'Q3 Budget'!B7", '=SUM(A1:A5)');
     });
 
     it('targets the live active cell when the plan has no earlier selectCell step', async () => {

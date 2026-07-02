@@ -218,7 +218,8 @@ export class InputBar {
     this.isOpen = false;
   }
 
-  /** Shows how many free-tier interactions are left today (issue #23). */
+  // The label renders whatever the last setRemaining call said — it does not
+  // subscribe to storage, so callers must refresh it on every open (see onOpen).
   setRemaining(count: number): void {
     this.usageLabel.textContent =
       count === 0 ? 'No free interactions left today'

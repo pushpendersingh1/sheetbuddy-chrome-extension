@@ -3,7 +3,7 @@ import { handlePrimitive } from './router';
 import { SheetBuddyCreature } from './creature';
 import { SheetBuddyCursor } from './cursor';
 import { InputBar } from './input-bar';
-import { makeUsageTracker } from '../usage';
+import { makeChromeUsageTracker, DAILY_FREE_LIMIT } from '../usage';
 
 console.log('[SheetBuddy] Content script loaded on', window.location.href);
 
@@ -95,12 +95,9 @@ inputBar.onStopRecording = () => {
 
 // Free-tier gate (issue #23): shared with background via chrome.storage.local —
 // this side only checks; background increments on successful plan outcomes.
-const usage = makeUsageTracker({
-  storageGet: (key) => chrome.storage.local.get(key),
-  storageSet: (items) => chrome.storage.local.set(items),
-});
+const usage = makeChromeUsageTracker();
 
-const LIMIT_MESSAGE = "You've used all 10 free interactions today — upgrade for unlimited access";
+const LIMIT_MESSAGE = `You've used all ${DAILY_FREE_LIMIT} free interactions today — upgrade for unlimited access`;
 
 inputBar.onOpen = () => {
   usage.remaining()

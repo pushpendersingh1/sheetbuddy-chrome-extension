@@ -48,3 +48,13 @@ export function makeUsageTracker(deps: UsageTrackerDeps) {
 
   return { remaining, increment };
 }
+
+// The one place the tracker binds to the real chrome.storage.local — shared by
+// the content script (which gates dispatch) and background (which increments),
+// so both sides are guaranteed to read/write the same record the same way.
+export function makeChromeUsageTracker(): ReturnType<typeof makeUsageTracker> {
+  return makeUsageTracker({
+    storageGet: (key) => chrome.storage.local.get(key),
+    storageSet: (items) => chrome.storage.local.set(items),
+  });
+}

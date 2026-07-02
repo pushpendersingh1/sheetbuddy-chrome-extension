@@ -69,9 +69,6 @@ const CURSOR_RECT_PRIMITIVES: Record<string, string> = {
   selectRange: 'readSelectionRect',
 };
 
-// Owns the pause/resume/abort state machine and the step loop that narrates,
-// dispatches, and confirms each SheetStep in turn. Deps are injected so this is
-// unit-testable without Chrome APIs, mirroring sheet-plan.ts/relay.ts.
 // The only primitives whose effect the Sheets API can reproduce: both write a
 // single value/formula to the currently-targeted cell, which maps directly to
 // spreadsheets.values.update. Selection/navigation primitives have no API
@@ -80,6 +77,9 @@ const WRITE_FALLBACK_PRIMITIVES = new Set(['typeText', 'writeToSelectedCell']);
 
 const FALLBACK_NARRATION = 'I switched to a fallback approach here — it still worked.';
 
+// Owns the pause/resume/abort state machine and the step loop that narrates,
+// dispatches, and confirms each SheetStep in turn. Deps are injected so this is
+// unit-testable without Chrome APIs, mirroring sheet-plan.ts/relay.ts.
 export function makeExecutionEngine(deps: ExecutionEngineDeps) {
   const { sendMessageToTab, narrator, sheetsApi } = deps;
   const pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
@@ -255,10 +255,14 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
       const ref = await findWriteTargetRef(tabId, steps, failedIndex);
       if (!ref) return false;
 
+      // The live read is authoritative (the plan may have navigateToSheet'd away
+      // from where it was built), but this fallback exists precisely because the
+      // DOM may be broken — so when it can't answer, fall back to the sheet the
+      // plan was built against. A1-notation sheet names quote embedded single
+      // quotes by doubling them.
       const sheetNameRes = await runPrimitive(tabId, 'activeSheetName');
-      if (!sheetNameRes.ok || !sheetNameRes.result) return false;
-      // A1-notation sheet names quote embedded single quotes by doubling them.
-      const sheetName = String(sheetNameRes.result).replace(/'/g, "''");
+      const rawName = sheetNameRes.ok && sheetNameRes.result ? String(sheetNameRes.result) : outcome.sheetName;
+      const sheetName = rawName.replace(/'/g, "''");
 
       await sheetsApi.writeCell(outcome.spreadsheetId, `'${sheetName}'!${ref}`, text);
       return true;

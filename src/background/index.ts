@@ -5,7 +5,7 @@ import { makeSheetPlanHandler } from './sheet-plan';
 import { makeRelay } from './relay';
 import { makeExecutionEngine } from './execution-engine';
 import { makeSheetsApi } from './sheets-api';
-import { makeUsageTracker } from '../usage';
+import { makeChromeUsageTracker } from '../usage';
 import { WORKER_URL } from '../config';
 
 // __DEV__ is true only in `npm run watch` (esbuild define).
@@ -139,10 +139,7 @@ const sheetsApi = makeSheetsApi({
 
 // Mirrors the content script's tracker (src/content/index.ts) via the shared
 // chrome.storage.local record: content gates, background increments.
-const usage = makeUsageTracker({
-  storageGet: (key) => chrome.storage.local.get(key),
-  storageSet: (items) => chrome.storage.local.set(items),
-});
+const usage = makeChromeUsageTracker();
 
 const executionEngine = makeExecutionEngine({
   sendMessageToTab: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
