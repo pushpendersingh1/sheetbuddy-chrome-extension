@@ -1,12 +1,16 @@
-import type { Message, RunPrimitivePayload, TranscriptPayload, OpenInputBarPayload, UserQueryPayload, PauseAtStepPayload } from '../types/messages';
+import type { Message, RunPrimitivePayload, TranscriptPayload, OpenInputBarPayload, UserQueryPayload, PauseAtStepPayload, CursorMoveToPayload, NarrationShowPayload } from '../types/messages';
 import { handlePrimitive } from './router';
 import { SheetBuddyCreature } from './creature';
+import { SheetBuddyCursor } from './cursor';
 import { InputBar } from './input-bar';
 
 console.log('[SheetBuddy] Content script loaded on', window.location.href);
 
 const creature = new SheetBuddyCreature();
 creature.mount();
+
+const cursor = new SheetBuddyCursor();
+cursor.mount();
 
 const inputBar = new InputBar();
 inputBar.mount();
@@ -15,6 +19,14 @@ inputBar.mount();
 // the toggle click: without this, mousedown closes the bar then click re-opens it.
 const creatureHost = document.querySelector('#sheetbuddy-creature-host');
 if (creatureHost) inputBar.dismissExclusions.push(creatureHost);
+
+// The cursor's "home" position — where it rests before any cell is confirmed
+// this run, and where its first flight visibly originates from.
+function creatureCenterPoint(): { x: number; y: number } {
+  const rect = creatureHost?.getBoundingClientRect();
+  if (!rect) return { x: window.innerWidth, y: window.innerHeight };
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
 
 // Wire creature click → pause mid-execution (matches Escape below), otherwise
 // toggle the input bar (open if closed, close if open).
@@ -137,12 +149,32 @@ chrome.runtime.onMessage.addListener(
       return;
     }
 
-    if (message.type === 'TASK_STARTED') creature.setState('active');
-    else if (message.type === 'TASK_COMPLETE') creature.setState('idle');
-    else if (message.type === 'PAUSE_AT_STEP') {
+    if (message.type === 'TASK_STARTED') {
+      creature.setState('active');
+      // Snap to the creature's position now, before any cell is confirmed —
+      // the first real moveTo() this run then visibly flies from here.
+      cursor.showAtHome(creatureCenterPoint());
+    } else if (message.type === 'TASK_COMPLETE') {
+      creature.setState('idle');
+      cursor.hide();
+      creature.hideBubble();
+    } else if (message.type === 'PAUSE_AT_STEP') {
       const { currentStep, totalSteps } = (message.payload ?? {}) as PauseAtStepPayload;
       console.log(`[SheetBuddy] Paused at step ${currentStep} of ${totalSteps}`);
       creature.setState('paused');
+    } else if (message.type === 'CURSOR_MOVE_TO') {
+      const { rect } = (message.payload ?? {}) as CursorMoveToPayload;
+      if (rect) cursor.moveTo(rect);
+    } else if (message.type === 'NARRATION_SHOW') {
+      const { text } = (message.payload ?? {}) as NarrationShowPayload;
+      // Before the cursor has landed on a cell this run (or for advisor/error
+      // responses that never point at anything), narration shows at the
+      // creature instead of floating with an unlanded cursor.
+      if (cursor.hasLandedOnCell()) cursor.showLabel(text);
+      else creature.showBubble(text);
+    } else if (message.type === 'NARRATION_HIDE') {
+      cursor.hideLabel();
+      creature.hideBubble();
     }
 
     console.log('[SheetBuddy] Content received:', message.type);

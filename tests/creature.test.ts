@@ -123,6 +123,30 @@ describe('SheetBuddyCreature', () => {
     });
   });
 
+  describe('showBubble/hideBubble', () => {
+    beforeEach(() => { creature.mount(); });
+
+    it('shadow root contains a .bubble element', () => {
+      const host = document.body.querySelector('#sheetbuddy-creature-host') as HTMLElement;
+      expect(host.shadowRoot!.querySelector('.bubble')).not.toBeNull();
+    });
+
+    it('showBubble sets the bubble element text', () => {
+      creature.showBubble('The value in B3 is 42.');
+      const host = document.body.querySelector('#sheetbuddy-creature-host') as HTMLElement;
+      const bubble = host.shadowRoot!.querySelector('.bubble') as HTMLElement;
+      expect(bubble.textContent).toBe('The value in B3 is 42.');
+    });
+
+    it('hideBubble clears the bubble element text', () => {
+      creature.showBubble('Selecting B7');
+      creature.hideBubble();
+      const host = document.body.querySelector('#sheetbuddy-creature-host') as HTMLElement;
+      const bubble = host.shadowRoot!.querySelector('.bubble') as HTMLElement;
+      expect(bubble.textContent).toBe('');
+    });
+  });
+
   describe('onClick', () => {
     beforeEach(() => { creature.mount(); });
 

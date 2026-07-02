@@ -1,8 +1,9 @@
 import type { Message, RelayedMessage, UserQueryPayload } from '../types/messages';
+import type { Narrator } from '../offscreen/narrator';
 import { makeDevReloader } from './dev-reload';
 import { makeSheetPlanHandler } from './sheet-plan';
 import { makeRelay } from './relay';
-import { makeExecutionEngine, MockNarrator } from './execution-engine';
+import { makeExecutionEngine } from './execution-engine';
 import { WORKER_URL } from '../config';
 
 // __DEV__ is true only in `npm run watch` (esbuild define).
@@ -101,14 +102,46 @@ const handleUserQuery = makeSheetPlanHandler({
   workerUrl: WORKER_URL,
 });
 
-// MockNarrator is deliberate here, not a placeholder left by mistake — real TTS
-// narration is issue #22's scope. #22 swaps this for offscreen/narrator.ts's
-// TTSNarrator (relayed through the offscreen document, since service workers
-// have no Audio/DOM).
+// TTSNarrator (offscreen/narrator.ts) uses Audio/DOM and lives in the offscreen
+// document — it can't be constructed directly in this service worker. Wrap the
+// existing SPEAK relay into a Narrator instead.
+function makeRelayedNarrator(relay: typeof relayToOffscreen): Narrator {
+  return {
+    speak(text: string): Promise<void> {
+      return new Promise((resolve, reject) => {
+        relay({ type: 'SPEAK', payload: { text } }, (response) => {
+          const r = response as { ok: boolean; error?: string } | undefined;
+          if (r?.ok) resolve();
+          else reject(new Error(r?.error ?? 'SPEAK relay failed'));
+        });
+      });
+    },
+  };
+}
+
+const narrator = makeRelayedNarrator(relayToOffscreen);
+
 const executionEngine = makeExecutionEngine({
   sendMessageToTab: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
-  narrator: MockNarrator,
+  narrator,
 });
+
+// For outcomes with no execution engine run (advisor/error) — TASK_STARTED
+// never fires for these, so the cursor never lands on a cell, and
+// content/index.ts's NARRATION_SHOW routing correctly puts the bubble on the
+// creature throughout. Nothing else will ever clear it once speak() settles,
+// so this explicitly hides it after (unlike plan mode, where the next step's
+// NARRATION_SHOW or the final TASK_COMPLETE handles cleanup).
+function speakStandaloneNarration(tabId: number, text: string, context: string): void {
+  chrome.tabs.sendMessage(tabId, { type: 'NARRATION_SHOW', payload: { text } }).catch(() => {});
+  narrator.speak(text)
+    .catch((err: unknown) => {
+      console.error(`[SheetBuddy] Narrator failed for ${context}:`, err);
+    })
+    .finally(() => {
+      chrome.tabs.sendMessage(tabId, { type: 'NARRATION_HIDE' }).catch(() => {});
+    });
+}
 
 chrome.runtime.onMessage.addListener(
   (message: Message, sender, sendResponse) => {
@@ -145,6 +178,16 @@ chrome.runtime.onMessage.addListener(
               }).catch((err: unknown) => {
                 console.error('[SheetBuddy] Execution engine threw unexpectedly:', err);
               });
+            } else if (outcome.status === 'advisor') {
+              // Q&A responses ("what's in B3?") have no sheet actions to run and no
+              // cell to point at — the only way the user ever hears (or sees) the
+              // answer is speaking it here, bubble at the creature throughout.
+              speakStandaloneNarration(tabId, outcome.plan.summary, 'advisor response');
+            } else if (outcome.status === 'error') {
+              // Same silent-drop problem as advisor, but for failures (context read
+              // failed, worker error, network/timeout) — narrate so the user knows
+              // *something* went wrong instead of the creature just going idle.
+              speakStandaloneNarration(tabId, `Sorry, I ran into a problem: ${outcome.error}`, 'error response');
             }
           });
         } else {
@@ -155,6 +198,9 @@ chrome.runtime.onMessage.addListener(
 
       case 'PAUSE_REQUESTED': {
         executionEngine.requestPause();
+        // Fire-and-forget: pause must register immediately regardless of whether
+        // the offscreen doc actually has anything playing to stop.
+        relayToOffscreen({ type: 'STOP_NARRATION' }, () => {});
         sendResponse({ ok: true });
         break;
       }

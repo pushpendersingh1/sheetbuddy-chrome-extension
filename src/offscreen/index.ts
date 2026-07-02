@@ -41,7 +41,7 @@ chrome.runtime.onMessage.addListener((message: Message & { _relayed?: boolean },
     }
 
     case 'STOP_NARRATION': {
-      // narrator.stop() deferred to issue #22 — no audio ref stored on TTSNarrator yet
+      narrator.stop();
       sendResponse({ ok: true });
       break;
     }

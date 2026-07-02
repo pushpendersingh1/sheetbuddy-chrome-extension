@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { makeExecutionEngine, MockNarrator, type ExecutionEngineDeps } from '../src/background/execution-engine';
 import type { Narrator } from '../src/offscreen/narrator';
-import type { Message, SheetPlan, SheetStep } from '../src/types/messages';
+import type { CellRect, Message, SheetPlan, SheetStep } from '../src/types/messages';
 import type { SheetPlanOutcome } from '../src/background/sheet-plan';
 
 const TAB_ID = 7;
@@ -63,6 +63,9 @@ function makeFakeTab(opts: FakeTabOptions = {}) {
 
   function applyEffect(name: string, args: unknown[]) {
     if (name === 'selectCell') state.activeCell = args[0] as string;
+    // Mirrors selectRange's real DOM effect: Sheets' name box shows "start:end"
+    // (confirmed via live inspection — nameBox.value === "A1:B3" after selecting A1:B3).
+    if (name === 'selectRange') state.activeCell = `${args[0]}:${args[1]}`;
     if (name === 'navigateToSheet') state.sheetName = args[0] as string;
     if (name === 'typeText' || name === 'writeToSelectedCell') state.formulaBar = args[0] as string;
   }
@@ -77,6 +80,10 @@ function makeFakeTab(opts: FakeTabOptions = {}) {
       case 'readActiveCell': return { ok: true, result: state.activeCell };
       case 'activeSheetName': return { ok: true, result: state.sheetName };
       case 'readFormulaBar': return { ok: true, result: state.formulaBar };
+      // No selection overlay in this fake by default — tests that care about the
+      // SheetBuddy cursor's rect read-back use withRectPrimitives() to override.
+      case 'readActiveCellRect': return { ok: true, result: null };
+      case 'readSelectionRect': return { ok: true, result: null };
     }
 
     dispatched.push(name);
@@ -104,15 +111,36 @@ function baseDeps(overrides: Partial<ExecutionEngineDeps> = {}): ExecutionEngine
   };
 }
 
+// Wraps a fake tab's sendMessageToTab so RUN_PRIMITIVE calls for the cursor's
+// rect-lookup primitives return fixed values, instead of makeFakeTab's default
+// (which doesn't know about them).
+function withRectPrimitives(
+  base: (tabId: number, message: Message) => Promise<unknown>,
+  rects: { active?: CellRect | null; selection?: CellRect | null },
+) {
+  return vi.fn(async (tabId: number, message: Message) => {
+    if (message.type === 'RUN_PRIMITIVE') {
+      const { name } = message.payload as { name: string };
+      if (name === 'readActiveCellRect') return { ok: true, result: rects.active ?? null };
+      if (name === 'readSelectionRect') return { ok: true, result: rects.selection ?? null };
+    }
+    return base(tabId, message);
+  });
+}
+
 function messagesOfType(sendMessageToTab: ReturnType<typeof vi.fn>, type: string): unknown[] {
   return sendMessageToTab.mock.calls.filter(([, m]) => (m as Message).type === type).map(([, m]) => m);
 }
 
 function dispatchedPrimitiveNames(sendMessageToTab: ReturnType<typeof vi.fn>): string[] {
+  const readOnlyPrimitives = [
+    'readSheetGid', 'readSpreadsheetId', 'readActiveCell', 'activeSheetName', 'readFormulaBar',
+    'readActiveCellRect', 'readSelectionRect',
+  ];
   return sendMessageToTab.mock.calls
     .filter(([, m]) => (m as Message).type === 'RUN_PRIMITIVE')
     .map(([, m]) => ((m as Message).payload as { name: string }).name)
-    .filter((name) => !['readSheetGid', 'readSpreadsheetId', 'readActiveCell', 'activeSheetName', 'readFormulaBar'].includes(name));
+    .filter((name) => !readOnlyPrimitives.includes(name));
 }
 
 describe('MockNarrator', () => {
@@ -142,6 +170,22 @@ describe('makeExecutionEngine', () => {
     expect(result).toEqual({ status: 'completed' });
     expect(narrated).toEqual(['Going to B7', 'Typing formula', 'Committing']);
     expect(dispatched).toEqual(['selectCell', 'typeText', 'commitCell']);
+  });
+
+  it('sends NARRATION_SHOW with each step\'s narration text before speaking it', async () => {
+    const { sendMessageToTab } = makeFakeTab();
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
+    const outcome = planOutcome([
+      step({ stepNumber: 1, primitive: 'selectCell', narration: 'Going to B7', args: { ref: 'B7' } }),
+      step({ stepNumber: 2, primitive: 'commitCell', narration: 'Committing' }),
+    ]);
+
+    await engine.execute(TAB_ID, outcome);
+
+    expect(messagesOfType(sendMessageToTab, 'NARRATION_SHOW')).toEqual([
+      { type: 'NARRATION_SHOW', payload: { text: 'Going to B7' } },
+      { type: 'NARRATION_SHOW', payload: { text: 'Committing' } },
+    ]);
   });
 
   it('sends TASK_STARTED before the first step and TASK_COMPLETE after the last', async () => {
@@ -186,6 +230,31 @@ describe('makeExecutionEngine', () => {
     expect(readActiveCellCalls).toBeGreaterThan(1);
   });
 
+  it('polls DOM confirmation for selectRange too, before reading the cursor\'s rect', async () => {
+    // Without this poll, moveCursorForStep's readSelectionRect() call would race
+    // Sheets' selection-border overlay, which (like the active-cell-border overlay
+    // selectCell confirms against) only renders once the DOM has caught up.
+    const rect: CellRect = { x: 45, y: 165, width: 203, height: 64 };
+    const { sendMessageToTab: baseFake, dispatched } = makeFakeTab({ delayMs: { selectRange: 30 } });
+    const sendMessageToTab = withRectPrimitives(baseFake, { selection: rect });
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, pollIntervalMs: 5, confirmTimeoutMs: 500 }));
+    const outcome = planOutcome([step({ stepNumber: 1, primitive: 'selectRange', args: { start: 'A1', end: 'B3' } })]);
+
+    const result = await engine.execute(TAB_ID, outcome);
+
+    expect(result).toEqual({ status: 'completed' });
+    expect(dispatched).toEqual(['selectRange']);
+    const readActiveCellCalls = sendMessageToTab.mock.calls.filter(
+      ([, m]) => (m as Message).type === 'RUN_PRIMITIVE' && ((m as Message).payload as { name: string }).name === 'readActiveCell',
+    ).length;
+    expect(readActiveCellCalls).toBeGreaterThan(1);
+    // The cursor still ends up in the right place once the DOM (and thus the
+    // confirmation poll) catches up.
+    expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([
+      { type: 'CURSOR_MOVE_TO', payload: { rect } },
+    ]);
+  });
+
   it('logs and continues when a primitive fails, without crashing', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { sendMessageToTab, dispatched } = makeFakeTab({ fail: ['typeText'] });
@@ -224,8 +293,12 @@ describe('makeExecutionEngine', () => {
   });
 
   it('pauses after the in-flight step completes, without interrupting it mid-step', async () => {
-    const { sendMessageToTab } = makeFakeTab();
-    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
+    // selectCell's DOM effect lands 20ms late — requestPause() fires at t=5ms,
+    // after selectCell has already dispatched but before confirmStep's poll
+    // succeeds, so this exercises the post-primitive checkpoint specifically
+    // (the pre-primitive/mid-narration checkpoint is covered by its own test below).
+    const { sendMessageToTab } = makeFakeTab({ delayMs: { selectCell: 20 } });
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, pollIntervalMs: 2, confirmTimeoutMs: 200 }));
     const outcome = planOutcome([
       step({ stepNumber: 1, primitive: 'selectCell', args: { ref: 'B7' } }),
       step({ stepNumber: 2, primitive: 'typeText', args: { text: '=SUM(A1:A5)' } }),
@@ -233,7 +306,7 @@ describe('makeExecutionEngine', () => {
     ]);
 
     const executePromise = engine.execute(TAB_ID, outcome);
-    engine.requestPause();
+    setTimeout(() => engine.requestPause(), 5);
 
     await vi.waitFor(() => {
       expect(messagesOfType(sendMessageToTab, 'PAUSE_AT_STEP')).toEqual([
@@ -270,15 +343,16 @@ describe('makeExecutionEngine', () => {
   });
 
   it('stops cleanly when aborted while paused, without dispatching remaining steps', async () => {
-    const { sendMessageToTab } = makeFakeTab();
-    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
+    // See the timing note on the previous test — same reasoning applies here.
+    const { sendMessageToTab } = makeFakeTab({ delayMs: { selectCell: 20 } });
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, pollIntervalMs: 2, confirmTimeoutMs: 200 }));
     const outcome = planOutcome([
       step({ stepNumber: 1, primitive: 'selectCell', args: { ref: 'B7' } }),
       step({ stepNumber: 2, primitive: 'typeText', args: { text: '=SUM(A1:A5)' } }),
     ]);
 
     const executePromise = engine.execute(TAB_ID, outcome);
-    engine.requestPause();
+    setTimeout(() => engine.requestPause(), 5);
     await vi.waitFor(() => expect(messagesOfType(sendMessageToTab, 'PAUSE_AT_STEP')).toHaveLength(1));
 
     engine.abort();
@@ -287,6 +361,122 @@ describe('makeExecutionEngine', () => {
     expect(result).toEqual({ status: 'aborted' });
     expect(dispatchedPrimitiveNames(sendMessageToTab)).toEqual(['selectCell']);
     expect(messagesOfType(sendMessageToTab, 'TASK_COMPLETE')).toHaveLength(1);
+  });
+
+  it('skips the primitive when pause is requested mid-narration, then retries the same step\'s narration on resume', async () => {
+    // Only the step's very first speak() call is held pending; every later call
+    // (the pause-narration line, and the retried narration after resume) resolves
+    // immediately — isolates the mid-narration checkpoint without needing to
+    // juggle multiple simultaneously-pending narrator promises.
+    const narrated: string[] = [];
+    let callCount = 0;
+    let releaseFirst: (() => void) | null = null;
+    const narrator: Narrator = {
+      speak: (text) => {
+        narrated.push(text);
+        callCount++;
+        if (callCount === 1) return new Promise<void>((resolve) => { releaseFirst = resolve; });
+        return Promise.resolve();
+      },
+    };
+    const { sendMessageToTab, dispatched } = makeFakeTab();
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, narrator }));
+    const outcome = planOutcome([
+      step({ stepNumber: 1, primitive: 'selectCell', narration: 'Going to B7', args: { ref: 'B7' } }),
+      step({ stepNumber: 2, primitive: 'commitCell', narration: 'Committing' }),
+    ]);
+
+    const executePromise = engine.execute(TAB_ID, outcome);
+    await vi.waitFor(() => expect(narrated).toEqual(['Going to B7']));
+    engine.requestPause();
+    releaseFirst!();
+
+    await vi.waitFor(() => expect(messagesOfType(sendMessageToTab, 'PAUSE_AT_STEP')).toHaveLength(1));
+    // Narration for step 1 finished, but its primitive must not have fired —
+    // pause was requested before runPrimitive, not after.
+    expect(dispatched).toEqual([]);
+    expect(narrated).toEqual(['Going to B7', 'Paused at step 1 of 2 — continue or start over?']);
+    // The pause line gets a NARRATION_SHOW too, same as any other narration.
+    expect(messagesOfType(sendMessageToTab, 'NARRATION_SHOW')).toContainEqual(
+      { type: 'NARRATION_SHOW', payload: { text: 'Paused at step 1 of 2 — continue or start over?' } },
+    );
+
+    engine.resume();
+    const result = await executePromise;
+
+    expect(result).toEqual({ status: 'completed' });
+    // Step 1's narration and primitive both ran again from scratch on retry — lossless.
+    expect(dispatched).toEqual(['selectCell', 'commitCell']);
+    expect(narrated).toEqual([
+      'Going to B7',
+      'Paused at step 1 of 2 — continue or start over?',
+      'Going to B7',
+      'Committing',
+    ]);
+  });
+
+  it('sends CURSOR_MOVE_TO with the active-cell rect after a selectCell step confirms', async () => {
+    const rect: CellRect = { x: 45, y: 165, width: 102, height: 22 };
+    const { sendMessageToTab: baseFake } = makeFakeTab();
+    const sendMessageToTab = withRectPrimitives(baseFake, { active: rect });
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
+    const outcome = planOutcome([step({ stepNumber: 1, primitive: 'selectCell', args: { ref: 'B7' } })]);
+
+    await engine.execute(TAB_ID, outcome);
+
+    expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([
+      { type: 'CURSOR_MOVE_TO', payload: { rect } },
+    ]);
+  });
+
+  it('sends CURSOR_MOVE_TO with the selection rect after a selectRange step confirms', async () => {
+    const rect: CellRect = { x: 45, y: 165, width: 203, height: 64 };
+    const { sendMessageToTab: baseFake } = makeFakeTab();
+    const sendMessageToTab = withRectPrimitives(baseFake, { selection: rect });
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
+    const outcome = planOutcome([
+      step({ stepNumber: 1, primitive: 'selectRange', args: { start: 'A1', end: 'B3' } }),
+    ]);
+
+    await engine.execute(TAB_ID, outcome);
+
+    expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([
+      { type: 'CURSOR_MOVE_TO', payload: { rect } },
+    ]);
+  });
+
+  it('does not send CURSOR_MOVE_TO for primitives with no cell target (e.g. commitCell)', async () => {
+    const { sendMessageToTab } = makeFakeTab();
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
+    const outcome = planOutcome([step({ stepNumber: 1, primitive: 'commitCell' })]);
+
+    await engine.execute(TAB_ID, outcome);
+
+    expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([]);
+  });
+
+  it('does not send CURSOR_MOVE_TO when the rect read-back comes back null', async () => {
+    const { sendMessageToTab: baseFake } = makeFakeTab();
+    const sendMessageToTab = withRectPrimitives(baseFake, { active: null });
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
+    const outcome = planOutcome([step({ stepNumber: 1, primitive: 'selectCell', args: { ref: 'B7' } })]);
+
+    await engine.execute(TAB_ID, outcome);
+
+    expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([]);
+  });
+
+  it('does not send CURSOR_MOVE_TO when the primitive itself failed', async () => {
+    const { sendMessageToTab: baseFake } = makeFakeTab({ fail: ['selectCell'] });
+    const sendMessageToTab = withRectPrimitives(baseFake, { active: { x: 1, y: 2, width: 3, height: 4 } });
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
+    const outcome = planOutcome([step({ stepNumber: 1, primitive: 'selectCell', args: { ref: 'B7' } })]);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await engine.execute(TAB_ID, outcome);
+
+    expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([]);
+    errorSpy.mockRestore();
   });
 
   it('stops between steps when aborted mid-run without ever pausing first', async () => {

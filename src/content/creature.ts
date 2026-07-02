@@ -60,6 +60,35 @@ const STYLES = `
     0%, 100% { filter: drop-shadow(0 0 8px rgba(66, 133, 244, 0.7)); }
     50%       { filter: drop-shadow(0 0 18px rgba(66, 133, 244, 1)); }
   }
+
+  /* Anchored above-left of the creature so it stays on-screen regardless of
+     how narrow the viewport gets near the bottom-right corner. width:max-content
+     (not just max-width) matters here specifically: :host has an explicit
+     width:56px, and this box has no left offset set, so its shrink-to-fit
+     width would otherwise be computed against that 56px containing block and
+     collapse to a near-minimum width — max-content escapes that and sizes to
+     the actual content, up to max-width. */
+  .bubble {
+    position: absolute;
+    right: 64px;
+    bottom: 8px;
+    width: max-content;
+    max-width: 280px;
+    padding: 6px 10px;
+    background: #10B981;
+    color: #fff;
+    font: 500 12px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    border-radius: 8px;
+    word-wrap: break-word;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+  }
+
+  .bubble:not(:empty) {
+    opacity: 1;
+  }
 `;
 
 const SVG = `<svg width="56" height="56" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
@@ -76,6 +105,7 @@ const SVG = `<svg width="56" height="56" viewBox="0 0 56 56" xmlns="http://www.w
 export class SheetBuddyCreature {
   private host: HTMLElement;
   private el: HTMLElement;
+  private bubbleEl: HTMLElement;
   private state: CreatureState = 'idle';
 
   onClick: (() => void) | null = null;
@@ -94,6 +124,10 @@ export class SheetBuddyCreature {
     this.el.innerHTML = SVG;
     this.el.addEventListener('click', () => this.onClick?.());
     shadow.appendChild(this.el);
+
+    this.bubbleEl = document.createElement('div');
+    this.bubbleEl.className = 'bubble';
+    shadow.appendChild(this.bubbleEl);
   }
 
   mount(): void {
@@ -113,5 +147,16 @@ export class SheetBuddyCreature {
 
   getState(): CreatureState {
     return this.state;
+  }
+
+  // Narration text that isn't attached to any specific cell (before the
+  // cursor has landed anywhere this run, or for advisor/error responses that
+  // never involve pointing at all) shows here instead of on the cursor.
+  showBubble(text: string): void {
+    this.bubbleEl.textContent = text;
+  }
+
+  hideBubble(): void {
+    this.bubbleEl.textContent = '';
   }
 }
