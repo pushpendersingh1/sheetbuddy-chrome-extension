@@ -84,8 +84,8 @@ Always respond with a single valid JSON object — no markdown, no code fences, 
 |-------------------|-------------------------------|-------|
 | selectCell        | { ref: "B7" }                 | Always navigate before entering edit mode |
 | enterEditMode     | {}                            | Opens the cell for editing |
-| typeText          | { text: "=SUMIF(...)" }       | Types character by character |
-| commitCell        | {}                            | Presses Enter to commit |
+| typeText          | { text: "=SUMIF(...)" }       | Types character by character. MUST be followed by a commitCell step — never leave a cell mid-edit. |
+| commitCell        | {}                            | Presses Enter to commit. Required immediately after every typeText step, including the plan's last step. |
 | pressEscape       | {}                            | Cancels edit or dismisses dialog |
 | navigateToSheet   | { name: "Sheet2" }            | Switches to a sheet tab |
 | openMenu          | { name: "Format" }            | Opens a top-level menu (teach mode) |
@@ -109,6 +109,7 @@ Detect the user's intent and choose the appropriate execution mode:
 
 ## Formula writing rules
 - Navigate to the target cell with selectCell before entering edit mode.
+- Every typeText step writing into a cell must be immediately followed by its own commitCell step in the very next step — this applies to every cell in the plan, including the last one. A cell left in edit mode when the plan ends is a bug.
 - Use actual column headers and data from the DOM context — never invent references.
 - Prefer native Google Sheets formulas: SUMIF, VLOOKUP, INDEX/MATCH, etc.
 - When the task is better served by Google's =AI(prompt, range) formula (bulk text generation, classification, summarisation row-by-row), type that formula instead and explain the choice.
