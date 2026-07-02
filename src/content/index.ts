@@ -3,6 +3,7 @@ import { handlePrimitive } from './router';
 import { SheetBuddyCreature } from './creature';
 import { SheetBuddyCursor } from './cursor';
 import { InputBar } from './input-bar';
+import { makeUsageTracker } from '../usage';
 
 console.log('[SheetBuddy] Content script loaded on', window.location.href);
 
@@ -92,14 +93,43 @@ inputBar.onStopRecording = () => {
   });
 };
 
+// Free-tier gate (issue #23): shared with background via chrome.storage.local —
+// this side only checks; background increments on successful plan outcomes.
+const usage = makeUsageTracker({
+  storageGet: (key) => chrome.storage.local.get(key),
+  storageSet: (items) => chrome.storage.local.set(items),
+});
+
+const LIMIT_MESSAGE = "You've used all 10 free interactions today — upgrade for unlimited access";
+
+inputBar.onOpen = () => {
+  usage.remaining()
+    .then((n) => inputBar.setRemaining(n))
+    .catch(() => {}); // count display is best-effort — never block the bar on it
+};
+
 inputBar.onQuery = (text: string) => {
-  creature.setState('thinking');
-  chrome.runtime.sendMessage({ type: 'USER_QUERY', payload: { text } satisfies UserQueryPayload }).catch(
-    (err: unknown) => {
-      console.error('[SheetBuddy] Failed to send USER_QUERY:', err);
-      creature.setState('idle');
-    },
-  );
+  void (async () => {
+    // Fail-open: a storage read error must not lock a paying-attention user out.
+    const remaining = await usage.remaining().catch(() => 1);
+    if (remaining <= 0) {
+      creature.showBubble(LIMIT_MESSAGE);
+      // SPEAK resolves when playback ends — keep the bubble up until then. No
+      // TASK_COMPLETE will ever fire here (nothing was dispatched), so the
+      // bubble must be hidden explicitly.
+      await chrome.runtime.sendMessage({ type: 'SPEAK', payload: { text: LIMIT_MESSAGE } }).catch(() => {});
+      creature.hideBubble();
+      return;
+    }
+
+    creature.setState('thinking');
+    chrome.runtime.sendMessage({ type: 'USER_QUERY', payload: { text } satisfies UserQueryPayload }).catch(
+      (err: unknown) => {
+        console.error('[SheetBuddy] Failed to send USER_QUERY:', err);
+        creature.setState('idle');
+      },
+    );
+  })();
 };
 
 inputBar.onDismiss = () => {

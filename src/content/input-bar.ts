@@ -88,6 +88,19 @@ const STYLES = `
   .send-btn:hover {
     background: #1a73e8;
   }
+
+  .usage-count {
+    display: none;
+    width: max-content;
+    margin: 6px 12px 0 auto;
+    padding: 2px 10px;
+    font-size: 11px;
+    color: #5f6368;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid #dadce0;
+    border-radius: 10px;
+    pointer-events: none;
+  }
 `;
 
 export class InputBar {
@@ -96,6 +109,7 @@ export class InputBar {
   private micBtn: HTMLButtonElement;
   private textInput: HTMLInputElement;
   private sendBtn: HTMLButtonElement;
+  private usageLabel: HTMLDivElement;
   private isRecording = false;
   private isOpen = false;
 
@@ -103,6 +117,9 @@ export class InputBar {
   onStopRecording: (() => void) | null = null;
   onQuery: ((text: string) => void) | null = null;
   onDismiss: (() => void) | null = null;
+  // Fires every time the bar opens — lets the content script refresh the
+  // free-tier remaining count (via setRemaining) with a fresh storage read.
+  onOpen: (() => void) | null = null;
   // Elements that should not trigger dismiss on mousedown (e.g. the creature host
   // that has its own click→toggle handler — mousedown would race with click).
   dismissExclusions: Element[] = [];
@@ -140,6 +157,10 @@ export class InputBar {
     this.bar.appendChild(this.sendBtn);
     shadow.appendChild(this.bar);
 
+    this.usageLabel = document.createElement('div');
+    this.usageLabel.className = 'usage-count';
+    shadow.appendChild(this.usageLabel);
+
     this.micBtn.addEventListener('click', () => this.toggleRecording());
     this.sendBtn.addEventListener('click', () => this.submit());
     this.textInput.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -167,6 +188,8 @@ export class InputBar {
   open(mode: 'voice' | 'text' | 'both'): void {
     this.bar.style.display = 'flex';
     this.isOpen = true;
+    if (this.usageLabel.textContent) this.usageLabel.style.display = 'block';
+    this.onOpen?.();
     if (mode === 'voice') {
       this.startRecording();
       this.textInput.focus();
@@ -190,8 +213,18 @@ export class InputBar {
     if (this.isRecording) this.stopRecording();
     this.unlockField(); // always reset to editable when bar is closed
     this.bar.style.display = 'none';
+    this.usageLabel.style.display = 'none';
     this.textInput.value = '';
     this.isOpen = false;
+  }
+
+  /** Shows how many free-tier interactions are left today (issue #23). */
+  setRemaining(count: number): void {
+    this.usageLabel.textContent =
+      count === 0 ? 'No free interactions left today'
+      : count === 1 ? '1 free interaction left today'
+      : `${count} free interactions left today`;
+    if (this.isOpen) this.usageLabel.style.display = 'block';
   }
 
   setTranscript(text: string): void {

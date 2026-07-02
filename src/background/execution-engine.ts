@@ -1,6 +1,7 @@
 import type { CellRect, Message, PrimitiveResult, SheetStep } from '../types/messages';
 import type { SheetPlanOutcome } from './sheet-plan';
 import type { Narrator } from '../offscreen/narrator';
+import type { SheetsApiClient } from './sheets-api';
 
 export const MockNarrator: Narrator = {
   speak(text: string): Promise<void> {
@@ -14,6 +15,10 @@ type PlanOutcome = Extract<SheetPlanOutcome, { status: 'plan' }>;
 export interface ExecutionEngineDeps {
   sendMessageToTab: (tabId: number, message: Message) => Promise<unknown>;
   narrator: Narrator;
+  // Optional Sheets REST API client for graceful degradation (issue #23): when
+  // a write primitive's DOM path fails, the value is written via the API
+  // instead. Without it, failed primitives keep the old log-and-continue behavior.
+  sheetsApi?: Pick<SheetsApiClient, 'writeCell'>;
   pollIntervalMs?: number;
   confirmTimeoutMs?: number;
 }
@@ -21,7 +26,8 @@ export interface ExecutionEngineDeps {
 export type ExecutionResult =
   | { status: 'completed' }
   | { status: 'aborted' }
-  | { status: 'stale-sheet' };
+  | { status: 'stale-sheet' }
+  | { status: 'failed' };
 
 const DEFAULT_POLL_INTERVAL_MS = 50;
 const DEFAULT_CONFIRM_TIMEOUT_MS = 2000;
@@ -66,8 +72,16 @@ const CURSOR_RECT_PRIMITIVES: Record<string, string> = {
 // Owns the pause/resume/abort state machine and the step loop that narrates,
 // dispatches, and confirms each SheetStep in turn. Deps are injected so this is
 // unit-testable without Chrome APIs, mirroring sheet-plan.ts/relay.ts.
+// The only primitives whose effect the Sheets API can reproduce: both write a
+// single value/formula to the currently-targeted cell, which maps directly to
+// spreadsheets.values.update. Selection/navigation primitives have no API
+// equivalent that would help the rest of a DOM-driven plan.
+const WRITE_FALLBACK_PRIMITIVES = new Set(['typeText', 'writeToSelectedCell']);
+
+const FALLBACK_NARRATION = 'I switched to a fallback approach here — it still worked.';
+
 export function makeExecutionEngine(deps: ExecutionEngineDeps) {
-  const { sendMessageToTab, narrator } = deps;
+  const { sendMessageToTab, narrator, sheetsApi } = deps;
   const pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const confirmTimeoutMs = deps.confirmTimeoutMs ?? DEFAULT_CONFIRM_TIMEOUT_MS;
 
@@ -199,6 +213,61 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
     }).catch(() => {});
   }
 
+  // Shows and speaks one narration line: NARRATION_SHOW fires the moment speech
+  // starts (content/index.ts routes it to the cursor label or creature bubble),
+  // and narration failure never propagates — a dead TTS pipeline must not abort
+  // the step loop (that would skip the trailing TASK_COMPLETE and leave the
+  // creature stuck "active"). Cleanup is the next NARRATION_SHOW or the final
+  // TASK_COMPLETE. `context` only labels the console error.
+  async function narrateLine(tabId: number, text: string, context: string): Promise<void> {
+    await sendMessageToTab(tabId, { type: 'NARRATION_SHOW', payload: { text } }).catch(() => {});
+    await narrator.speak(text).catch((err: unknown) => {
+      console.error(`[SheetBuddy] Narrator failed for ${context}:`, errMsg(err));
+    });
+  }
+
+  // The cell the failed write step was aimed at: the plan's own most recent
+  // selectCell target, or (for plans that write to wherever the user already
+  // was) the live active cell.
+  async function findWriteTargetRef(tabId: number, steps: SheetStep[], failedIndex: number): Promise<string | null> {
+    for (let j = failedIndex - 1; j >= 0; j--) {
+      if (steps[j].primitive === 'selectCell' && steps[j].args.ref) return steps[j].args.ref;
+    }
+    const active = await runPrimitive(tabId, 'readActiveCell');
+    return active.ok && active.result ? String(active.result) : null;
+  }
+
+  // Reproduces a failed DOM write via spreadsheets.values.update. Returns false
+  // (rather than throwing) on any failure — target unknown, sheet name
+  // unreadable, OAuth declined, API error — so the caller has a single
+  // "fallback also failed" path to report on.
+  async function attemptApiWriteFallback(
+    tabId: number,
+    outcome: PlanOutcome,
+    steps: SheetStep[],
+    failedIndex: number,
+  ): Promise<boolean> {
+    if (!sheetsApi) return false;
+    const text = steps[failedIndex].args.text;
+    if (!text) return false;
+
+    try {
+      const ref = await findWriteTargetRef(tabId, steps, failedIndex);
+      if (!ref) return false;
+
+      const sheetNameRes = await runPrimitive(tabId, 'activeSheetName');
+      if (!sheetNameRes.ok || !sheetNameRes.result) return false;
+      // A1-notation sheet names quote embedded single quotes by doubling them.
+      const sheetName = String(sheetNameRes.result).replace(/'/g, "''");
+
+      await sheetsApi.writeCell(outcome.spreadsheetId, `'${sheetName}'!${ref}`, text);
+      return true;
+    } catch (err) {
+      console.error('[SheetBuddy] Sheets API fallback failed:', errMsg(err));
+      return false;
+    }
+  }
+
   // Speaks the pause line, dims the creature, and blocks until resume()/abort().
   // Shared by both pause checkpoints in execute()'s loop (mid-narration and
   // post-primitive) so "paused" always looks and sounds the same regardless of
@@ -206,10 +275,7 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
   async function pauseAndWait(tabId: number, stepIndex: number, totalSteps: number): Promise<void> {
     const currentStep = stepIndex + 1;
     const pauseLine = `Paused at step ${currentStep} of ${totalSteps} — continue or start over?`;
-    await sendMessageToTab(tabId, { type: 'NARRATION_SHOW', payload: { text: pauseLine } }).catch(() => {});
-    await narrator.speak(pauseLine).catch((err: unknown) => {
-      console.error('[SheetBuddy] Narrator failed for pause message:', errMsg(err));
-    });
+    await narrateLine(tabId, pauseLine, 'pause message');
     await sendMessageToTab(tabId, {
       type: 'PAUSE_AT_STEP',
       payload: { currentStep, totalSteps },
@@ -234,23 +300,12 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
     await sendMessageToTab(tabId, { type: 'TASK_STARTED' }).catch(() => {});
 
     const { steps } = outcome.plan;
+    let failed = false;
     let i = 0;
     while (i < steps.length && !aborted) {
       const step = steps[i];
 
-      // Shown the moment narration starts (not after the primitive confirms, which
-      // is often well after this step's audio already finished) — content/index.ts
-      // routes it to the cursor's label if a cell is already landed on, or the
-      // creature's bubble otherwise.
-      await sendMessageToTab(tabId, { type: 'NARRATION_SHOW', payload: { text: step.narration } }).catch(() => {});
-
-      // Narration failing (e.g. the real TTSNarrator's network request rejects) must
-      // not abort the loop early — that would skip the trailing TASK_COMPLETE below
-      // and leave the creature stuck "active" forever, the exact failure mode
-      // sheet-plan.ts's own TASK_COMPLETE handling exists to prevent.
-      await narrator.speak(step.narration).catch((err: unknown) => {
-        console.error(`[SheetBuddy] Narrator failed at step ${step.stepNumber}:`, errMsg(err));
-      });
+      await narrateLine(tabId, step.narration, `step ${step.stepNumber}`);
 
       if (aborted) break;
 
@@ -266,6 +321,23 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
       const result = await runPrimitive(tabId, step.primitive, toPositionalArgs(step.primitive, step.args));
       if (!result.ok) {
         console.error(`[SheetBuddy] Primitive "${step.primitive}" failed at step ${step.stepNumber}:`, result.error);
+        if (sheetsApi && WRITE_FALLBACK_PRIMITIVES.has(step.primitive)) {
+          if (await attemptApiWriteFallback(tabId, outcome, steps, i)) {
+            await narrateLine(tabId, FALLBACK_NARRATION, 'fallback notice');
+            // The API write is already committed — the DOM commitCell paired
+            // with this write step has nothing left to do and its confirmation
+            // poll would only burn the timeout, so skip it.
+            if (steps[i + 1]?.primitive === 'commitCell') i++;
+          } else {
+            await narrateLine(
+              tabId,
+              `Sorry, I couldn't complete step ${step.stepNumber} — ${step.description}. I tried a fallback approach, but that failed too, so I've stopped here.`,
+              'failure notice',
+            );
+            failed = true;
+            break;
+          }
+        }
       } else {
         await confirmStep(tabId, step, steps[i - 1]);
         await moveCursorForStep(tabId, step);
@@ -282,7 +354,8 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
     }
 
     await sendMessageToTab(tabId, { type: 'TASK_COMPLETE' }).catch(() => {});
-    return aborted ? { status: 'aborted' } : { status: 'completed' };
+    if (aborted) return { status: 'aborted' };
+    return failed ? { status: 'failed' } : { status: 'completed' };
   }
 
   return { execute, requestPause, resume, abort };

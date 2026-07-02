@@ -307,4 +307,35 @@ describe('InputBar', () => {
       expect(cb).not.toHaveBeenCalled();
     });
   });
+
+  describe('remaining count (free tier)', () => {
+    function getUsageLabel(): HTMLElement | null {
+      return getHost().shadowRoot!.querySelector('.usage-count');
+    }
+
+    it('calls onOpen when the bar opens, so the count can be refreshed', () => {
+      const cb = vi.fn();
+      inputBar.onOpen = cb;
+      inputBar.open('both');
+      expect(cb).toHaveBeenCalledOnce();
+    });
+
+    it('setRemaining displays how many free interactions are left today', () => {
+      inputBar.open('both');
+      inputBar.setRemaining(7);
+      expect(getUsageLabel()?.textContent).toBe('7 free interactions left today');
+    });
+
+    it('uses singular phrasing for the last remaining interaction', () => {
+      inputBar.open('both');
+      inputBar.setRemaining(1);
+      expect(getUsageLabel()?.textContent).toBe('1 free interaction left today');
+    });
+
+    it('shows none left at zero', () => {
+      inputBar.open('both');
+      inputBar.setRemaining(0);
+      expect(getUsageLabel()?.textContent).toBe('No free interactions left today');
+    });
+  });
 });

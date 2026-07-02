@@ -537,4 +537,89 @@ describe('makeExecutionEngine', () => {
     // so the plan's own navigateToSheet step can't trip it.
     expect(gidReadCount).toBe(1);
   });
+
+  describe('Sheets API fallback (graceful degradation)', () => {
+    function writePlan() {
+      return planOutcome([
+        step({ stepNumber: 1, primitive: 'selectCell', narration: 'Going to B7', args: { ref: 'B7' } }),
+        step({ stepNumber: 2, primitive: 'typeText', narration: 'Typing formula', args: { text: '=SUM(A1:A5)' } }),
+        step({ stepNumber: 3, primitive: 'commitCell', narration: 'Committing' }),
+      ]);
+    }
+
+    it('writes via the Sheets API when a write primitive\'s DOM path fails, and the plan completes', async () => {
+      const narrated: string[] = [];
+      const narrator: Narrator = { speak: async (text) => { narrated.push(text); } };
+      const writeCell = vi.fn().mockResolvedValue(undefined);
+      const { sendMessageToTab } = makeFakeTab({ fail: ['typeText'] });
+      const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, narrator, sheetsApi: { writeCell } }));
+
+      const result = await engine.execute(TAB_ID, writePlan());
+
+      expect(result).toEqual({ status: 'completed' });
+      expect(writeCell).toHaveBeenCalledWith('abc', "'Sheet1'!B7", '=SUM(A1:A5)');
+      expect(narrated).toContain('I switched to a fallback approach here — it still worked.');
+    });
+
+    it('skips the paired commitCell after a successful API fallback — the API write is already committed', async () => {
+      const writeCell = vi.fn().mockResolvedValue(undefined);
+      const { sendMessageToTab, dispatched } = makeFakeTab({ fail: ['typeText'] });
+      const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, sheetsApi: { writeCell } }));
+
+      await engine.execute(TAB_ID, writePlan());
+
+      expect(dispatched).toEqual(['selectCell', 'typeText']);
+    });
+
+    it('reports the failure clearly and stops when the API fallback also fails', async () => {
+      const narrated: string[] = [];
+      const narrator: Narrator = { speak: async (text) => { narrated.push(text); } };
+      const writeCell = vi.fn().mockRejectedValue(new Error('OAuth declined'));
+      const { sendMessageToTab, dispatched } = makeFakeTab({ fail: ['typeText'] });
+      const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, narrator, sheetsApi: { writeCell } }));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const result = await engine.execute(TAB_ID, writePlan());
+      errorSpy.mockRestore();
+
+      expect(result).toEqual({ status: 'failed' });
+      expect(narrated).toContain(
+        "Sorry, I couldn't complete step 2 — step 2. I tried a fallback approach, but that failed too, so I've stopped here.",
+      );
+      // The plan stops at the failed step — the trailing commitCell never runs —
+      // but the creature is still released back to idle.
+      expect(dispatched).toEqual(['selectCell', 'typeText']);
+      expect(messagesOfType(sendMessageToTab, 'TASK_COMPLETE')).toHaveLength(1);
+    });
+
+    it('keeps the old log-and-continue behavior for failed non-write primitives', async () => {
+      const writeCell = vi.fn();
+      const { sendMessageToTab, dispatched } = makeFakeTab({ fail: ['navigateToSheet'] });
+      const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, sheetsApi: { writeCell } }));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const result = await engine.execute(TAB_ID, planOutcome([
+        step({ stepNumber: 1, primitive: 'navigateToSheet', args: { name: 'Sheet2' } }),
+        step({ stepNumber: 2, primitive: 'selectCell', args: { ref: 'A1' } }),
+      ]));
+      errorSpy.mockRestore();
+
+      expect(result).toEqual({ status: 'completed' });
+      expect(writeCell).not.toHaveBeenCalled();
+      expect(dispatched).toEqual(['navigateToSheet', 'selectCell']);
+    });
+
+    it('targets the live active cell when the plan has no earlier selectCell step', async () => {
+      const writeCell = vi.fn().mockResolvedValue(undefined);
+      const { sendMessageToTab } = makeFakeTab({ fail: ['writeToSelectedCell'], activeCell: 'D4' });
+      const engine = makeExecutionEngine(baseDeps({ sendMessageToTab, sheetsApi: { writeCell } }));
+
+      const result = await engine.execute(TAB_ID, planOutcome([
+        step({ stepNumber: 1, primitive: 'writeToSelectedCell', args: { text: 'hello' } }),
+      ]));
+
+      expect(result).toEqual({ status: 'completed' });
+      expect(writeCell).toHaveBeenCalledWith('abc', "'Sheet1'!D4", 'hello');
+    });
+  });
 });

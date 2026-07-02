@@ -4,6 +4,8 @@ import { makeDevReloader } from './dev-reload';
 import { makeSheetPlanHandler } from './sheet-plan';
 import { makeRelay } from './relay';
 import { makeExecutionEngine } from './execution-engine';
+import { makeSheetsApi } from './sheets-api';
+import { makeUsageTracker } from '../usage';
 import { WORKER_URL } from '../config';
 
 // __DEV__ is true only in `npm run watch` (esbuild define).
@@ -121,9 +123,31 @@ function makeRelayedNarrator(relay: typeof relayToOffscreen): Narrator {
 
 const narrator = makeRelayedNarrator(relayToOffscreen);
 
+// Graceful-degradation client (issue #23): when a DOM write primitive fails,
+// the engine falls back to the Sheets REST API. Requires the manifest's oauth2
+// client_id to be a real Google Cloud OAuth client — with the placeholder,
+// getAuthToken rejects and the engine's "fallback also failed" path reports it.
+const sheetsApi = makeSheetsApi({
+  fetchFn: globalThis.fetch.bind(globalThis),
+  getAuthToken: async (interactive) => {
+    const { token } = await chrome.identity.getAuthToken({ interactive });
+    if (!token) throw new Error('No OAuth token granted');
+    return token;
+  },
+  removeCachedToken: (token) => chrome.identity.removeCachedAuthToken({ token }),
+});
+
+// Mirrors the content script's tracker (src/content/index.ts) via the shared
+// chrome.storage.local record: content gates, background increments.
+const usage = makeUsageTracker({
+  storageGet: (key) => chrome.storage.local.get(key),
+  storageSet: (items) => chrome.storage.local.set(items),
+});
+
 const executionEngine = makeExecutionEngine({
   sendMessageToTab: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
   narrator,
+  sheetsApi,
 });
 
 // For outcomes with no execution engine run (advisor/error) — TASK_STARTED
@@ -173,6 +197,11 @@ chrome.runtime.onMessage.addListener(
           void handleUserQuery(tabId, text).then(outcome => {
             console.log('[SheetBuddy] SheetPlan:', outcome);
             if (outcome.status === 'plan') {
+              // Only real plan dispatches consume a free-tier interaction —
+              // parse failures and advisor-only responses don't (issue #23).
+              usage.increment().catch((err: unknown) => {
+                console.error('[SheetBuddy] Failed to record usage:', err);
+              });
               void executionEngine.execute(tabId, outcome).then(result => {
                 console.log('[SheetBuddy] Execution finished:', result);
               }).catch((err: unknown) => {
