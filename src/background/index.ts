@@ -119,9 +119,11 @@ function makeRelayedNarrator(relay: typeof relayToOffscreen): Narrator {
   };
 }
 
+const narrator = makeRelayedNarrator(relayToOffscreen);
+
 const executionEngine = makeExecutionEngine({
   sendMessageToTab: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
-  narrator: makeRelayedNarrator(relayToOffscreen),
+  narrator,
 });
 
 chrome.runtime.onMessage.addListener(
@@ -158,6 +160,12 @@ chrome.runtime.onMessage.addListener(
                 console.log('[SheetBuddy] Execution finished:', result);
               }).catch((err: unknown) => {
                 console.error('[SheetBuddy] Execution engine threw unexpectedly:', err);
+              });
+            } else if (outcome.status === 'advisor') {
+              // Q&A responses ("what's in B3?") have no sheet actions to run — the
+              // only way the user ever hears the answer is speaking it here.
+              narrator.speak(outcome.plan.summary).catch((err: unknown) => {
+                console.error('[SheetBuddy] Narrator failed for advisor response:', err);
               });
             }
           });
