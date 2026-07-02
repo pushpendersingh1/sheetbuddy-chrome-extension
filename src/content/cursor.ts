@@ -38,6 +38,12 @@ const STYLES = `
     overflow: hidden;
     text-overflow: ellipsis;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .label:not(:empty) {
+    opacity: 1;
   }
 `;
 
@@ -53,6 +59,7 @@ export class SheetBuddyCursor {
   private host: HTMLElement;
   private labelEl: HTMLElement;
   private visible = false;
+  private landed = false;
 
   constructor() {
     this.host = document.createElement('div');
@@ -77,14 +84,35 @@ export class SheetBuddyCursor {
     document.body.appendChild(this.host);
   }
 
-  // Positions the arrow's tip at the center of the target cell/range and shows
-  // a short label describing the step next to it.
-  moveTo(rect: CellRect, label: string): void {
+  // Snaps (no transition) to a resting point — the creature's position — and
+  // becomes visible there. Called at task start, before any cell is known, so
+  // the first real moveTo() visibly flies FROM the creature rather than
+  // teleporting in already at the target.
+  showAtHome(point: { x: number; y: number }): void {
+    this.landed = false;
+    this.host.style.transition = 'none';
+    this.host.style.left = `${point.x}px`;
+    this.host.style.top = `${point.y}px`;
+    void this.host.offsetHeight; // force reflow so the snap applies before re-enabling transition
+    this.host.style.transition = '';
+    this.show();
+  }
+
+  // Animates the arrow's tip to the center of the target cell/range.
+  moveTo(rect: CellRect): void {
+    this.landed = true;
     const x = rect.x + rect.width / 2;
     const y = rect.y + rect.height / 2;
     this.host.style.left = `${x}px`;
     this.host.style.top = `${y}px`;
-    this.labelEl.textContent = label;
+  }
+
+  showLabel(text: string): void {
+    this.labelEl.textContent = text;
+  }
+
+  hideLabel(): void {
+    this.labelEl.textContent = '';
   }
 
   show(): void {
@@ -94,10 +122,19 @@ export class SheetBuddyCursor {
 
   hide(): void {
     this.visible = false;
+    this.landed = false;
     this.host.style.opacity = '0';
+    this.hideLabel();
   }
 
   isVisible(): boolean {
     return this.visible;
+  }
+
+  // Whether the cursor currently sits at a confirmed cell (vs. still at its
+  // creature "home" position) — content/index.ts uses this to decide whether
+  // narration text attaches to the cursor or to the creature.
+  hasLandedOnCell(): boolean {
+    return this.landed;
   }
 }

@@ -126,6 +126,23 @@ const executionEngine = makeExecutionEngine({
   narrator,
 });
 
+// For outcomes with no execution engine run (advisor/error) — TASK_STARTED
+// never fires for these, so the cursor never lands on a cell, and
+// content/index.ts's NARRATION_SHOW routing correctly puts the bubble on the
+// creature throughout. Nothing else will ever clear it once speak() settles,
+// so this explicitly hides it after (unlike plan mode, where the next step's
+// NARRATION_SHOW or the final TASK_COMPLETE handles cleanup).
+function speakStandaloneNarration(tabId: number, text: string, context: string): void {
+  chrome.tabs.sendMessage(tabId, { type: 'NARRATION_SHOW', payload: { text } }).catch(() => {});
+  narrator.speak(text)
+    .catch((err: unknown) => {
+      console.error(`[SheetBuddy] Narrator failed for ${context}:`, err);
+    })
+    .finally(() => {
+      chrome.tabs.sendMessage(tabId, { type: 'NARRATION_HIDE' }).catch(() => {});
+    });
+}
+
 chrome.runtime.onMessage.addListener(
   (message: Message, sender, sendResponse) => {
     const tabId = sender.tab?.id ?? null;
@@ -162,18 +179,15 @@ chrome.runtime.onMessage.addListener(
                 console.error('[SheetBuddy] Execution engine threw unexpectedly:', err);
               });
             } else if (outcome.status === 'advisor') {
-              // Q&A responses ("what's in B3?") have no sheet actions to run — the
-              // only way the user ever hears the answer is speaking it here.
-              narrator.speak(outcome.plan.summary).catch((err: unknown) => {
-                console.error('[SheetBuddy] Narrator failed for advisor response:', err);
-              });
+              // Q&A responses ("what's in B3?") have no sheet actions to run and no
+              // cell to point at — the only way the user ever hears (or sees) the
+              // answer is speaking it here, bubble at the creature throughout.
+              speakStandaloneNarration(tabId, outcome.plan.summary, 'advisor response');
             } else if (outcome.status === 'error') {
               // Same silent-drop problem as advisor, but for failures (context read
               // failed, worker error, network/timeout) — narrate so the user knows
               // *something* went wrong instead of the creature just going idle.
-              narrator.speak(`Sorry, I ran into a problem: ${outcome.error}`).catch((err: unknown) => {
-                console.error('[SheetBuddy] Narrator failed for error response:', err);
-              });
+              speakStandaloneNarration(tabId, `Sorry, I ran into a problem: ${outcome.error}`, 'error response');
             }
           });
         } else {

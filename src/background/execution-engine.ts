@@ -195,7 +195,7 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
 
     await sendMessageToTab(tabId, {
       type: 'CURSOR_MOVE_TO',
-      payload: { rect: result.result as CellRect, label: step.description },
+      payload: { rect: result.result as CellRect },
     }).catch(() => {});
   }
 
@@ -205,11 +205,11 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
   // which checkpoint caught it.
   async function pauseAndWait(tabId: number, stepIndex: number, totalSteps: number): Promise<void> {
     const currentStep = stepIndex + 1;
-    await narrator
-      .speak(`Paused at step ${currentStep} of ${totalSteps} — continue or start over?`)
-      .catch((err: unknown) => {
-        console.error('[SheetBuddy] Narrator failed for pause message:', errMsg(err));
-      });
+    const pauseLine = `Paused at step ${currentStep} of ${totalSteps} — continue or start over?`;
+    await sendMessageToTab(tabId, { type: 'NARRATION_SHOW', payload: { text: pauseLine } }).catch(() => {});
+    await narrator.speak(pauseLine).catch((err: unknown) => {
+      console.error('[SheetBuddy] Narrator failed for pause message:', errMsg(err));
+    });
     await sendMessageToTab(tabId, {
       type: 'PAUSE_AT_STEP',
       payload: { currentStep, totalSteps },
@@ -237,6 +237,12 @@ export function makeExecutionEngine(deps: ExecutionEngineDeps) {
     let i = 0;
     while (i < steps.length && !aborted) {
       const step = steps[i];
+
+      // Shown the moment narration starts (not after the primitive confirms, which
+      // is often well after this step's audio already finished) — content/index.ts
+      // routes it to the cursor's label if a cell is already landed on, or the
+      // creature's bubble otherwise.
+      await sendMessageToTab(tabId, { type: 'NARRATION_SHOW', payload: { text: step.narration } }).catch(() => {});
 
       // Narration failing (e.g. the real TTSNarrator's network request rejects) must
       // not abort the loop early — that would skip the trailing TASK_COMPLETE below

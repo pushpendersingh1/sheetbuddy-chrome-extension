@@ -172,6 +172,22 @@ describe('makeExecutionEngine', () => {
     expect(dispatched).toEqual(['selectCell', 'typeText', 'commitCell']);
   });
 
+  it('sends NARRATION_SHOW with each step\'s narration text before speaking it', async () => {
+    const { sendMessageToTab } = makeFakeTab();
+    const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
+    const outcome = planOutcome([
+      step({ stepNumber: 1, primitive: 'selectCell', narration: 'Going to B7', args: { ref: 'B7' } }),
+      step({ stepNumber: 2, primitive: 'commitCell', narration: 'Committing' }),
+    ]);
+
+    await engine.execute(TAB_ID, outcome);
+
+    expect(messagesOfType(sendMessageToTab, 'NARRATION_SHOW')).toEqual([
+      { type: 'NARRATION_SHOW', payload: { text: 'Going to B7' } },
+      { type: 'NARRATION_SHOW', payload: { text: 'Committing' } },
+    ]);
+  });
+
   it('sends TASK_STARTED before the first step and TASK_COMPLETE after the last', async () => {
     const { sendMessageToTab } = makeFakeTab();
     const engine = makeExecutionEngine(baseDeps({ sendMessageToTab }));
@@ -235,7 +251,7 @@ describe('makeExecutionEngine', () => {
     // The cursor still ends up in the right place once the DOM (and thus the
     // confirmation poll) catches up.
     expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([
-      { type: 'CURSOR_MOVE_TO', payload: { rect, label: 'step 1' } },
+      { type: 'CURSOR_MOVE_TO', payload: { rect } },
     ]);
   });
 
@@ -380,6 +396,10 @@ describe('makeExecutionEngine', () => {
     // pause was requested before runPrimitive, not after.
     expect(dispatched).toEqual([]);
     expect(narrated).toEqual(['Going to B7', 'Paused at step 1 of 2 — continue or start over?']);
+    // The pause line gets a NARRATION_SHOW too, same as any other narration.
+    expect(messagesOfType(sendMessageToTab, 'NARRATION_SHOW')).toContainEqual(
+      { type: 'NARRATION_SHOW', payload: { text: 'Paused at step 1 of 2 — continue or start over?' } },
+    );
 
     engine.resume();
     const result = await executePromise;
@@ -405,7 +425,7 @@ describe('makeExecutionEngine', () => {
     await engine.execute(TAB_ID, outcome);
 
     expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([
-      { type: 'CURSOR_MOVE_TO', payload: { rect, label: 'step 1' } },
+      { type: 'CURSOR_MOVE_TO', payload: { rect } },
     ]);
   });
 
@@ -421,7 +441,7 @@ describe('makeExecutionEngine', () => {
     await engine.execute(TAB_ID, outcome);
 
     expect(messagesOfType(sendMessageToTab, 'CURSOR_MOVE_TO')).toEqual([
-      { type: 'CURSOR_MOVE_TO', payload: { rect, label: 'step 1' } },
+      { type: 'CURSOR_MOVE_TO', payload: { rect } },
     ]);
   });
 

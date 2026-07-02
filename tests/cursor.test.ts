@@ -37,6 +37,10 @@ describe('SheetBuddyCursor', () => {
     expect(cursor.isVisible()).toBe(false);
   });
 
+  it('hasLandedOnCell() defaults to false', () => {
+    expect(cursor.hasLandedOnCell()).toBe(false);
+  });
+
   describe('show/hide', () => {
     beforeEach(() => { cursor.mount(); });
 
@@ -54,28 +58,69 @@ describe('SheetBuddyCursor', () => {
       const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
       expect(host.style.opacity).toBe('0');
     });
+
+    it('hide() resets hasLandedOnCell() to false, so a later run starts fresh', () => {
+      cursor.moveTo({ x: 0, y: 0, width: 10, height: 10 });
+      expect(cursor.hasLandedOnCell()).toBe(true);
+      cursor.hide();
+      expect(cursor.hasLandedOnCell()).toBe(false);
+    });
+  });
+
+  describe('showAtHome', () => {
+    beforeEach(() => { cursor.mount(); });
+
+    it('snaps position to the given point and becomes visible', () => {
+      cursor.showAtHome({ x: 500, y: 700 });
+      const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
+      expect(host.style.left).toBe('500px');
+      expect(host.style.top).toBe('700px');
+      expect(cursor.isVisible()).toBe(true);
+    });
+
+    it('does not mark the cursor as landed on a cell', () => {
+      cursor.showAtHome({ x: 0, y: 0 });
+      expect(cursor.hasLandedOnCell()).toBe(false);
+    });
   });
 
   describe('moveTo', () => {
     beforeEach(() => { cursor.mount(); });
 
     it('positions the arrow tip at the center of the given rect', () => {
-      cursor.moveTo({ x: 45, y: 165, width: 102, height: 22 }, 'Selecting B7');
+      cursor.moveTo({ x: 45, y: 165, width: 102, height: 22 });
       const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
       expect(host.style.left).toBe('96px'); // 45 + 102/2
       expect(host.style.top).toBe('176px'); // 165 + 22/2
     });
 
-    it('sets the label text to the given description', () => {
-      cursor.moveTo({ x: 0, y: 0, width: 10, height: 10 }, 'Typing formula into B7');
+    it('marks the cursor as landed on a cell', () => {
+      cursor.moveTo({ x: 0, y: 0, width: 10, height: 10 });
+      expect(cursor.hasLandedOnCell()).toBe(true);
+    });
+
+    it('does not change visibility when moving', () => {
+      cursor.moveTo({ x: 0, y: 0, width: 10, height: 10 });
+      expect(cursor.isVisible()).toBe(false);
+    });
+  });
+
+  describe('showLabel/hideLabel', () => {
+    beforeEach(() => { cursor.mount(); });
+
+    it('showLabel sets the label element text', () => {
+      cursor.showLabel('Typing formula into B7');
       const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
       const label = host.shadowRoot!.querySelector('.label') as HTMLElement;
       expect(label.textContent).toBe('Typing formula into B7');
     });
 
-    it('does not change visibility when moving', () => {
-      cursor.moveTo({ x: 0, y: 0, width: 10, height: 10 }, 'Selecting A1');
-      expect(cursor.isVisible()).toBe(false);
+    it('hideLabel clears the label element text', () => {
+      cursor.showLabel('Selecting B7');
+      cursor.hideLabel();
+      const host = document.body.querySelector('#sheetbuddy-cursor-host') as HTMLElement;
+      const label = host.shadowRoot!.querySelector('.label') as HTMLElement;
+      expect(label.textContent).toBe('');
     });
   });
 });

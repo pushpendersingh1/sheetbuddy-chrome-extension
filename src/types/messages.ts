@@ -16,6 +16,8 @@ export type MessageType =
   | 'START_RECORDING'
   | 'STOP_RECORDING'
   | 'CURSOR_MOVE_TO'
+  | 'NARRATION_SHOW'
+  | 'NARRATION_HIDE'
   | 'DEBUG';
 
 export interface UserQueryPayload {
@@ -87,7 +89,14 @@ export interface CellRect {
 
 export interface CursorMoveToPayload {
   rect: CellRect;
-  label: string;
+}
+
+// The narration bubble's text. Which visual it attaches to (the cursor at its
+// current cell, or the creature) is a routing decision content/index.ts makes
+// based on whether the cursor has landed on a cell yet this run — not carried
+// in the message itself.
+export interface NarrationShowPayload {
+  text: string;
 }
 
 export interface SheetStep {
